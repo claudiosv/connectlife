@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass, field
 from typing import Any
 
 from homeassistant.components.sensor import (
@@ -12,7 +13,7 @@ from homeassistant.components.sensor import (
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import UnitOfEnergy, UnitOfTemperature
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.entity import DeviceInfo
+from homeassistant.helpers.entity import DeviceInfo, EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
@@ -43,6 +44,9 @@ async def async_setup_entry(
         if temp_sensors_enabled:
             entities.append(ConnectLifeCurrentTempSensor(coordinator, puid, device))
             entities.append(ConnectLifeTargetTempSensor(coordinator, puid, device))
+
+        for fd in _STATUS_FIELDS:
+            entities.append(ConnectLifeStatusSensor(coordinator, puid, device, fd))
 
     async_add_entities(entities)
 
@@ -177,3 +181,94 @@ class ConnectLifeTargetTempSensor(_ConnectLifeBaseSensor):
             return float(val) if val is not None else None
         except (TypeError, ValueError):
             return None
+
+
+# ---------------------------------------------------------------------------
+# Generic status sensors — one per statusList field
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class _FieldDef:
+    key: str
+    name: str
+    device_class: SensorDeviceClass | None = None
+    state_class: SensorStateClass | None = None
+    is_temperature: bool = False  # unit follows t_temp_type
+    entity_category: EntityCategory = field(default=EntityCategory.DIAGNOSTIC)
+
+
+_STATUS_FIELDS: list[_FieldDef] = [
+    # Error / fault flags
+    _FieldDef("f_e_upmachine",            "Upstream Machine Fault"),
+    _FieldDef("f_e_dwmachine",            "Downstream Machine Fault"),
+    _FieldDef("f_e_intemp",               "Indoor Temp Sensor Fault"),
+    _FieldDef("f_e_incoiltemp",           "Indoor Coil Temp Sensor Fault"),
+    _FieldDef("f_e_outcoiltemp",          "Outdoor Coil Temp Sensor Fault"),
+    _FieldDef("f_e_waterfull",            "Water Tank Full"),
+    _FieldDef("f_e_push",                 "Push Fault"),
+    # AC operating state
+    _FieldDef("t_power",                  "Power"),
+    _FieldDef("t_work_mode",              "Work Mode"),
+    _FieldDef("t_fan_speed",              "Fan Speed"),
+    _FieldDef("t_fan_mute",               "Fan Mute"),
+    _FieldDef("t_sleep",                  "Sleep"),
+    _FieldDef("t_super",                  "Boost"),
+    _FieldDef("t_up_down",                "Vertical Swing"),
+    _FieldDef("t_temp_type",              "Temp Unit"),
+    # Temperature (raw API values; distinct from the primary temp sensors above)
+    _FieldDef(
+        "f_temp_in", "Indoor Temperature",
+        device_class=SensorDeviceClass.TEMPERATURE,
+        state_class=SensorStateClass.MEASUREMENT,
+        is_temperature=True,
+    ),
+    _FieldDef(
+        "t_temp", "Setpoint Temperature",
+        device_class=SensorDeviceClass.TEMPERATURE,
+        state_class=SensorStateClass.MEASUREMENT,
+        is_temperature=True,
+    ),
+    # Device / Matter info
+    _FieldDef("f_matterOriginalVendorId", "Matter Vendor ID"),
+    _FieldDef("f_matterUniqueId",         "Matter Unique ID"),
+]
+
+
+class ConnectLifeStatusSensor(_ConnectLifeBaseSensor):
+    """Diagnostic sensor exposing a single raw statusList field."""
+
+    def __init__(
+        self,
+        coordinator: ConnectLifeCoordinator,
+        puid: str,
+        device: dict[str, Any],
+        fd: _FieldDef,
+    ) -> None:
+        super().__init__(coordinator, puid)
+        self._field_key = fd.key
+        self._is_temperature = fd.is_temperature
+        self._attr_unique_id = f"{puid}_{fd.key}"
+        self._attr_name = fd.name
+        self._attr_device_class = fd.device_class
+        self._attr_state_class = fd.state_class
+        self._attr_entity_category = fd.entity_category
+        self._attr_device_info = _device_info(device, puid, DOMAIN)
+
+    @property
+    def native_unit_of_measurement(self) -> str | None:
+        if self._is_temperature:
+            return _temp_unit(self._status())
+        return None
+
+    @property
+    def native_value(self) -> str | float | None:
+        val = self._status().get(self._field_key)
+        if val is None:
+            return None
+        if self._is_temperature:
+            try:
+                return float(val)
+            except (TypeError, ValueError):
+                return None
+        return val
