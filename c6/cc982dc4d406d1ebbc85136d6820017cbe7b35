@@ -1,0 +1,53 @@
+__init__.py
+  s_977153b6deaadb::t_aafbc05a3a60b9 30
+  s_977153b6deaadb::t_6dfc648ae44384 33-34
+const.py
+  s_977153b6deaadb::t_5d13d2309229c6 20
+  s_977153b6deaadb::t_2a879171425d67 13-14
+coordinator.py
+  s_977153b6deaadb::t_e2cfe042fdf796 26-31,36
+api.py
+  s_977153b6deaadb::t_c322c24ed57b19 98-102,107
+  s_977153b6deaadb::t_f39b22a82ab6f5 12-17
+  s_977153b6deaadb::t_d900e73a4afd51 154-186
+  s_977153b6deaadb::t_0522ed5d479ec7 110-112
+  s_977153b6deaadb::t_f841623f9032c6 210-211,222-223,226,228-238,240-250,258,264,277
+config_flow.py
+  s_977153b6deaadb::t_84899276fa4e29 307-311,313
+  s_977153b6deaadb::t_2448d2f1792a15 30,32,37,44
+  s_977153b6deaadb::t_085d8400ab3939 208-210
+  s_977153b6deaadb::t_21cfd4d643fa85 148-155,157-161,173
+  s_977153b6deaadb::t_03e81e7cd73e66 267
+climate.py
+  s_977153b6deaadb::t_2a2a2e430fa018 5
+  s_977153b6deaadb::t_ee22407c6a5ca1 555-558
+  s_977153b6deaadb::t_48f04c56c94e15 459
+  s_977153b6deaadb::t_e8876778fdbd13 227
+  s_977153b6deaadb::t_5b06cc47a33218 31
+  s_977153b6deaadb::t_68a5420f88a816 29
+  s_977153b6deaadb::t_4ef468d5cd9ad2 91-93,106
+  s_977153b6deaadb::t_42825f9b8384e5 310-318
+  s_977153b6deaadb::t_bddc586fb30454 536-539
+  s_977153b6deaadb::t_44813a92b0a331 209,216
+  s_977153b6deaadb::t_b50836cada57da 455-458,460-463
+  s_977153b6deaadb::t_11572535b8fe78 522,541,560,579,594,603,612
+  s_977153b6deaadb::t_7ad05fd7bf684f 576-577
+  s_977153b6deaadb::t_7872c607f1c0eb 511,516,518-520
+  s_977153b6deaadb::t_ba54e8e8b9523c 591-592,598-601,607-610
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.8",
+  "base_commit_sha": "c6cc982dc4d406d1ebbc85136d6820017cbe7b35",
+  "prompts": {},
+  "sessions": {
+    "s_977153b6deaadb": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0ded5be9-37c3-4021-8107-0db26008062c",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "Claudio Spiess <claudiosv@users.noreply.github.com>"
+    }
+  }
+}
