@@ -1,0 +1,21 @@
+button.py
+  s_977153b6deaadb::t_e216709b4c6951 1-60
+__init__.py
+  s_977153b6deaadb::t_237dfba3877ebc 14
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.8",
+  "base_commit_sha": "b404a896cad32b003c32f7941c087b9869cf34fd",
+  "prompts": {},
+  "sessions": {
+    "s_977153b6deaadb": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0ded5be9-37c3-4021-8107-0db26008062c",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "Claudio Spiess <claudiosv@users.noreply.github.com>"
+    }
+  }
+}
