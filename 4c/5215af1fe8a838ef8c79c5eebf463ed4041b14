@@ -1,0 +1,19 @@
+sensor.py
+  s_977153b6deaadb::t_0ec333285f989d 5,16,48-50,184-274
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.8",
+  "base_commit_sha": "4c5215af1fe8a838ef8c79c5eebf463ed4041b14",
+  "prompts": {},
+  "sessions": {
+    "s_977153b6deaadb": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0ded5be9-37c3-4021-8107-0db26008062c",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "Claudio Spiess <claudiosv@users.noreply.github.com>"
+    }
+  }
+}
