@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+  <!-- Background rounded square -->
+  <rect width="256" height="256" rx="48" ry="48" fill="#00AEEF"/>
+
+  <!-- AC unit body -->
+  <rect x="36" y="92" width="184" height="90" rx="14" ry="14" fill="#FFFFFF"/>
+
+  <!-- Vent slats -->
+  <rect x="52" y="112" width="152" height="6" rx="3" fill="#00AEEF"/>
+  <rect x="52" y="127" width="152" height="6" rx="3" fill="#00AEEF"/>
+  <rect x="52" y="142" width="152" height="6" rx="3" fill="#00AEEF"/>
+  <rect x="52" y="157" width="80"  height="6" rx="3" fill="#00AEEF"/>
+
+  <!-- Power button circle -->
+  <circle cx="188" cy="155" r="16" fill="#00AEEF"/>
+  <path d="M188 143 v10 M181 147 a10 10 0 1 0 14 0" stroke="#FFFFFF" stroke-width="2.5" stroke-linecap="round" fill="none"/>
+
+  <!-- Snowflake / cool indicator above unit -->
+  <g transform="translate(128,62)" stroke="#FFFFFF" stroke-width="4" stroke-linecap="round" fill="none">
+    <line x1="0" y1="-18" x2="0"  y2="18"/>
+    <line x1="-15.6" y1="-9" x2="15.6" y2="9"/>
+    <line x1="15.6" y1="-9" x2="-15.6" y2="9"/>
+    <!-- Tips -->
+    <line x1="-6" y1="-22" x2="0" y2="-18"/>
+    <line x1="6"  y1="-22" x2="0" y2="-18"/>
+    <line x1="-6" y1="22"  x2="0" y2="18"/>
+    <line x1="6"  y1="22"  x2="0" y2="18"/>
+    <line x1="-19.6" y1="-6" x2="-15.6" y2="-9"/>
+    <line x1="-19.6" y1="-12" x2="-15.6" y2="-9"/>
+    <line x1="19.6"  y1="-6" x2="15.6"  y2="-9"/>
+    <line x1="19.6"  y1="-12" x2="15.6" y2="-9"/>
+    <line x1="-19.6" y1="6"  x2="-15.6" y2="9"/>
+    <line x1="-19.6" y1="12" x2="-15.6" y2="9"/>
+    <line x1="19.6"  y1="6"  x2="15.6"  y2="9"/>
+    <line x1="19.6"  y1="12" x2="15.6"  y2="9"/>
+  </g>
+</svg>

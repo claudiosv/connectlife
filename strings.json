@@ -1,0 +1,54 @@
+{
+  "options": {
+    "step": {
+      "init": {
+        "title": "ConnectLife options",
+        "data": {
+          "password": "Password",
+          "beeping": "Enable beep on commands",
+          "temperature_unit": "Temperature unit",
+          "temperature_sensors": "Create separate temperature sensor entities",
+          "current_temperature_entity": "External temperature sensor (overrides AC reading)",
+          "current_humidity_entity": "External humidity sensor (overrides AC reading)",
+          "devices_config": "Device configuration (JSON)"
+        }
+      }
+    },
+    "error": {
+      "invalid_auth": "Invalid password.",
+      "cannot_connect": "Cannot connect to ConnectLife servers.",
+      "invalid_json": "The device configuration is not valid JSON.",
+      "unknown": "An unexpected error occurred."
+    }
+  },
+  "config": {
+    "step": {
+      "user": {
+        "title": "ConnectLife",
+        "description": "Enter your ConnectLife account credentials.",
+        "data": {
+          "username": "Email address",
+          "password": "Password",
+          "beeping": "Enable beep on commands",
+          "temperature_unit": "Temperature unit",
+          "temperature_sensors": "Create separate temperature sensor entities",
+          "current_temperature_entity": "External temperature sensor (overrides AC reading)",
+          "current_humidity_entity": "External humidity sensor (overrides AC reading)",
+          "devices_config": "Device configuration (JSON)"
+        },
+        "data_description": {
+          "devices_config": "Optional JSON keyed by deviceFeatureCode to customise available modes, fan speeds, and swing options per device model."
+        }
+      }
+    },
+    "error": {
+      "invalid_auth": "Invalid username or password.",
+      "cannot_connect": "Cannot connect to ConnectLife servers.",
+      "invalid_json": "The device configuration is not valid JSON.",
+      "unknown": "An unexpected error occurred."
+    },
+    "abort": {
+      "already_configured": "This account is already configured."
+    }
+  }
+}
