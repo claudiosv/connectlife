@@ -200,38 +200,40 @@ class _FieldDef:
 
 _STATUS_FIELDS: list[_FieldDef] = [
     # Error / fault flags
-    _FieldDef("f_e_upmachine",            "Upstream Machine Fault"),
-    _FieldDef("f_e_dwmachine",            "Downstream Machine Fault"),
-    _FieldDef("f_e_intemp",               "Indoor Temp Sensor Fault"),
-    _FieldDef("f_e_incoiltemp",           "Indoor Coil Temp Sensor Fault"),
-    _FieldDef("f_e_outcoiltemp",          "Outdoor Coil Temp Sensor Fault"),
-    _FieldDef("f_e_waterfull",            "Water Tank Full"),
-    _FieldDef("f_e_push",                 "Push Fault"),
+    _FieldDef("f_e_upmachine", "Upstream Machine Fault"),
+    _FieldDef("f_e_dwmachine", "Downstream Machine Fault"),
+    _FieldDef("f_e_intemp", "Indoor Temp Sensor Fault"),
+    _FieldDef("f_e_incoiltemp", "Indoor Coil Temp Sensor Fault"),
+    _FieldDef("f_e_outcoiltemp", "Outdoor Coil Temp Sensor Fault"),
+    _FieldDef("f_e_waterfull", "Water Tank Full"),
+    _FieldDef("f_e_push", "Push Fault"),
     # AC operating state
-    _FieldDef("t_power",                  "Power"),
-    _FieldDef("t_work_mode",              "Work Mode"),
-    _FieldDef("t_fan_speed",              "Fan Speed"),
-    _FieldDef("t_fan_mute",               "Fan Mute"),
-    _FieldDef("t_sleep",                  "Sleep"),
-    _FieldDef("t_super",                  "Boost"),
-    _FieldDef("t_up_down",                "Vertical Swing"),
-    _FieldDef("t_temp_type",              "Temp Unit"),
+    _FieldDef("t_power", "Power"),
+    _FieldDef("t_work_mode", "Work Mode"),
+    _FieldDef("t_fan_speed", "Fan Speed"),
+    _FieldDef("t_fan_mute", "Fan Mute"),
+    _FieldDef("t_sleep", "Sleep"),
+    _FieldDef("t_super", "Boost"),
+    _FieldDef("t_up_down", "Vertical Swing"),
+    _FieldDef("t_temp_type", "Temp Unit"),
     # Temperature (raw API values; distinct from the primary temp sensors above)
     _FieldDef(
-        "f_temp_in", "Indoor Temperature",
+        "f_temp_in",
+        "Indoor Temperature",
         device_class=SensorDeviceClass.TEMPERATURE,
         state_class=SensorStateClass.MEASUREMENT,
         is_temperature=True,
     ),
     _FieldDef(
-        "t_temp", "Setpoint Temperature",
+        "t_temp",
+        "Setpoint Temperature",
         device_class=SensorDeviceClass.TEMPERATURE,
         state_class=SensorStateClass.MEASUREMENT,
         is_temperature=True,
     ),
     # Device / Matter info
     _FieldDef("f_matterOriginalVendorId", "Matter Vendor ID"),
-    _FieldDef("f_matterUniqueId",         "Matter Unique ID"),
+    _FieldDef("f_matterUniqueId", "Matter Unique ID"),
 ]
 
 

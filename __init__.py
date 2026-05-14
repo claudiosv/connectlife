@@ -11,7 +11,7 @@ from .api import ConnectLifeApi
 from .const import CONF_POLL_INTERVAL, DOMAIN, UPDATE_INTERVAL_SECONDS
 from .coordinator import ConnectLifeCoordinator
 
-PLATFORMS = [Platform.CLIMATE, Platform.SENSOR]
+PLATFORMS = [Platform.BUTTON, Platform.CLIMATE, Platform.SENSOR]
 
 
 def entry_config(entry: ConfigEntry) -> dict:

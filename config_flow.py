@@ -51,7 +51,7 @@ _DEFAULT_DEVICES_CONFIG = json.dumps({
         "t_work_mode": ["fan only", "cool", "dry", "auto"],
         "t_fan_speed": {
             "0": "auto",
-            "1": "super low",
+            # "1": "super low",
             "2": "low",
             "3": "medium",
             "4": "high",
