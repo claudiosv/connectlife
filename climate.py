@@ -272,14 +272,14 @@ class ConnectLifeClimate(CoordinatorEntity[ConnectLifeCoordinator], ClimateEntit
         # Temperature: not settable in auto, dry, or fan-only
         if mode not in (HVACMode.AUTO, HVACMode.DRY, HVACMode.FAN_ONLY):
             features |= ClimateEntityFeature.TARGET_TEMPERATURE
-        # Fan speed: available in all modes except dry
+        # Fan speed: not available in dry mode
         if self._fan_options and mode != HVACMode.DRY:
             features |= ClimateEntityFeature.FAN_MODE
-        # Swing: available in dry and fan-only, not auto
+        # Swing: available in all non-off modes
         if self._swing_options and mode != HVACMode.OFF:
             features |= ClimateEntityFeature.SWING_MODE
-        # Presets: not available in fan-only
-        if mode != HVACMode.FAN_ONLY:
+        # Presets: not available in fan-only or auto (auto has no supported presets)
+        if mode not in (HVACMode.FAN_ONLY, HVACMode.AUTO):
             features |= ClimateEntityFeature.PRESET_MODE
         if self._current_humidity_entity:
             features |= ClimateEntityFeature.TARGET_HUMIDITY
@@ -288,11 +288,11 @@ class ConnectLifeClimate(CoordinatorEntity[ConnectLifeCoordinator], ClimateEntit
     @property
     def preset_modes(self) -> list[str] | None:
         mode = self.hvac_mode
-        if mode == HVACMode.FAN_ONLY:
+        if mode in (HVACMode.FAN_ONLY, HVACMode.AUTO):
             return None
-        if mode in (HVACMode.AUTO, HVACMode.DRY):
+        if mode == HVACMode.DRY:
             return [PRESET_NONE, PRESET_SLEEP]
-        return [PRESET_NONE, PRESET_ECO, PRESET_SLEEP, PRESET_BOOST]
+        return [PRESET_NONE, PRESET_SLEEP, PRESET_BOOST]
 
     @property
     def available(self) -> bool:
@@ -485,7 +485,8 @@ class ConnectLifeClimate(CoordinatorEntity[ConnectLifeCoordinator], ClimateEntit
             props["t_fan_speed"] = int(status["t_fan_speed"])
 
         # Preset-controlled fields — include current values if present
-        for key in ("t_fan_mute", "t_sleep", "t_super"):
+        # for key in ("t_fan_mute", "t_sleep", "t_super"):
+        for key in ("t_sleep", "t_super"):
             if key in status:
                 props[key] = int(status[key])
 
@@ -514,6 +515,12 @@ class ConnectLifeClimate(CoordinatorEntity[ConnectLifeCoordinator], ClimateEntit
             slug = cl_name.replace(" ", "_").lower()
             mode_val = self._mode_options.get(slug, "4")
             overrides = {"t_power": 1, "t_work_mode": int(mode_val)}
+            # Clear presets incompatible with the target mode so the device
+            # doesn't hold stale state after the switch.
+            if hvac_mode == HVACMode.AUTO:
+                overrides.update({"t_sleep": 0, "t_super": 0, "t_fan_mute": 0})
+            elif hvac_mode == HVACMode.DRY:
+                overrides["t_super"] = 0
 
         props = self._build_properties(overrides)
         self._optimistic_status.update(overrides)
@@ -525,6 +532,9 @@ class ConnectLifeClimate(CoordinatorEntity[ConnectLifeCoordinator], ClimateEntit
         """Set target temperature."""
         temp = kwargs.get("temperature")
         if temp is None:
+            return
+        if self.hvac_mode in (HVACMode.AUTO, HVACMode.DRY, HVACMode.FAN_ONLY):
+            _LOGGER.warning("Target temperature cannot be set in %s mode", self.hvac_mode)
             return
         if self._current_temp_entity and self._external_temp_enabled:
             # External sensor mode: store desired room temp and let the thermostat
@@ -552,7 +562,26 @@ class ConnectLifeClimate(CoordinatorEntity[ConnectLifeCoordinator], ClimateEntit
         if fan_val is None:
             _LOGGER.warning("Unknown fan mode: %s", fan_mode)
             return
-        overrides = {"t_fan_speed": int(fan_val)}
+        overrides: dict[str, Any] = {"t_fan_speed": int(fan_val)}
+        if self.hvac_mode == HVACMode.DRY:
+            # Dry mode doesn't support fan speed; switch to the best available
+            # mode that does, in a single API call.
+            fallback = next(
+                (slug for slug in ("auto", "cool", "fan_only", "heat")
+                 if slug in self._mode_options),
+                None,
+            )
+            if fallback is None:
+                _LOGGER.warning("No mode available that supports fan speed control")
+                return
+            overrides["t_power"] = 1
+            overrides["t_work_mode"] = int(self._mode_options[fallback])
+        # Selecting a non-auto fan speed while sleep is active violates the
+        # sleep constraint (sleep requires auto fan), so exit sleep mode.
+        auto_val = self._fan_options.get("auto")
+        if auto_val is not None and fan_val != auto_val:
+            if int(self._status().get("t_sleep", 0)) == 1:
+                overrides["t_sleep"] = 0
         props = self._build_properties(overrides)
         self._optimistic_status.update(overrides)
         self.async_write_ha_state()
@@ -580,11 +609,28 @@ class ConnectLifeClimate(CoordinatorEntity[ConnectLifeCoordinator], ClimateEntit
 
     async def async_set_preset_mode(self, preset_mode: str) -> None:
         """Set preset mode."""
-        overrides: dict[str, int] = {"t_fan_mute": 0, "t_sleep": 0, "t_super": 0}
+        mode = self.hvac_mode
+        if mode in (HVACMode.AUTO, HVACMode.FAN_ONLY):
+            _LOGGER.warning("Preset modes are not supported in %s mode", mode)
+            return
+        if mode == HVACMode.DRY and preset_mode == PRESET_BOOST:
+            _LOGGER.warning("Boost preset is not supported in dry mode")
+            return
+
+        # Always clear all three flags first — t_sleep and t_super are mutually
+        # exclusive, so zeroing both before setting one enforces that constraint.
+        overrides: dict[str, Any] = {
+            "t_sleep": 0,
+            "t_super": 0,
+        }
         if preset_mode == PRESET_ECO:
             overrides["t_fan_mute"] = 1
         elif preset_mode == PRESET_SLEEP:
             overrides["t_sleep"] = 1
+            # Sleep requires auto fan speed.
+            auto_val = self._fan_options.get("auto")
+            if auto_val is not None:
+                overrides["t_fan_speed"] = int(auto_val)
         elif preset_mode == PRESET_BOOST:
             overrides["t_super"] = 1
         props = self._build_properties(overrides)

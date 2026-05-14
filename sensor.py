@@ -36,6 +36,8 @@ async def async_setup_entry(
     cfg = entry_config(entry)
     temp_sensors_enabled = cfg.get(CONF_TEMPERATURE_SENSORS, False)
 
+    known_keys = {fd.key for fd in _STATUS_FIELDS}
+
     entities: list[SensorEntity] = []
     for puid, device in coordinator.data.items():
         # if "daily_energy_kwh" in device.get("statusList", {}):
@@ -47,6 +49,11 @@ async def async_setup_entry(
 
         for fd in _STATUS_FIELDS:
             entities.append(ConnectLifeStatusSensor(coordinator, puid, device, fd))
+
+        for key in device.get("statusList", {}):
+            if key not in known_keys:
+                fd = _FieldDef(key=key, name=key)
+                entities.append(ConnectLifeStatusSensor(coordinator, puid, device, fd))
 
     async_add_entities(entities)
 
