@@ -534,7 +534,9 @@ class ConnectLifeClimate(CoordinatorEntity[ConnectLifeCoordinator], ClimateEntit
         if temp is None:
             return
         if self.hvac_mode in (HVACMode.AUTO, HVACMode.DRY, HVACMode.FAN_ONLY):
-            _LOGGER.warning("Target temperature cannot be set in %s mode", self.hvac_mode)
+            _LOGGER.warning(
+                "Target temperature cannot be set in %s mode", self.hvac_mode
+            )
             return
         if self._current_temp_entity and self._external_temp_enabled:
             # External sensor mode: store desired room temp and let the thermostat
@@ -567,8 +569,11 @@ class ConnectLifeClimate(CoordinatorEntity[ConnectLifeCoordinator], ClimateEntit
             # Dry mode doesn't support fan speed; switch to the best available
             # mode that does, in a single API call.
             fallback = next(
-                (slug for slug in ("auto", "cool", "fan_only", "heat")
-                 if slug in self._mode_options),
+                (
+                    slug
+                    for slug in ("auto", "cool", "fan_only", "heat")
+                    if slug in self._mode_options
+                ),
                 None,
             )
             if fallback is None:
