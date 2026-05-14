@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import base64
 import hashlib
 import json
@@ -15,6 +14,7 @@ from typing import TYPE_CHECKING, Any, Literal
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
+    from homeassistant.helpers.storage import Store
 
 import aiohttp
 from cryptography.hazmat.primitives import serialization
@@ -32,7 +32,6 @@ from .const import (
     APP_ID,
     APP_SECRET,
     BASE_URL,
-    ENERGY_REQUEST_DELAY,
     GIGYA_API_KEY,
     GIGYA_GMID,
     OAUTH_CLIENT_ID,
@@ -81,6 +80,27 @@ def _retry_wait(retry_state: RetryCallState) -> float:
     )
 
 
+def _mono_to_unix(mono_exp: float) -> float:
+    """Convert a monotonic expiry timestamp to an absolute unix timestamp."""
+    return time.time() + (mono_exp - time.monotonic())
+
+
+def _unix_to_mono(unix_exp: float) -> float:
+    """Convert an absolute unix expiry timestamp to a monotonic timestamp."""
+    return time.monotonic() + (unix_exp - time.time())
+
+
+def _jwt_monotonic_expiry(token: str) -> float:
+    """Return the monotonic time at which a JWT expires, or 0 on any parse error."""
+    try:
+        payload_b64 = token.split(".")[1]
+        payload_b64 += "=" * (-len(payload_b64) % 4)
+        exp: int = json.loads(base64.urlsafe_b64decode(payload_b64)).get("exp", 0)
+        return time.monotonic() + (exp - time.time())
+    except Exception:
+        return 0.0
+
+
 def _parse_retry_after(headers: Any) -> float | None:
     value = headers.get("Retry-After")
     if value is None:
@@ -110,6 +130,15 @@ class ConnectLifeApi:
         self._login_token: str | None = None
         self._login_token_expires_at: float = 0.0
         self._uid: str | None = None
+        self._id_token: str | None = None
+        self._id_token_expires_at: float = 0.0
+        self._refresh_token: str | None = None
+        self._store: Store | None = None
+        self._cache_loaded = False
+        if hass is not None:
+            from homeassistant.helpers.storage import Store as _Store
+
+            self._store = _Store(hass, 1, f"connectlife.{username}.tokens")
         self._public_key = serialization.load_pem_public_key(PUBLIC_KEY_PEM.encode())
 
     # ------------------------------------------------------------------
@@ -199,12 +228,58 @@ class ConnectLifeApi:
     # Authentication
     # ------------------------------------------------------------------
 
+    async def _load_token_cache(self) -> None:
+        """Load persisted tokens from storage on first call (no-op thereafter)."""
+        if self._store is None or self._cache_loaded:
+            return
+        self._cache_loaded = True
+        data: dict[str, Any] = await self._store.async_load() or {}
+        if not data:
+            return
+        now = time.time()
+        if (lt := data.get("login_token")) and data.get("login_token_exp", 0) > now:
+            self._login_token = lt
+            self._login_token_expires_at = _unix_to_mono(data["login_token_exp"])
+            self._uid = data.get("uid")
+        if (it := data.get("id_token")) and data.get("id_token_exp", 0) > now:
+            self._id_token = it
+            self._id_token_expires_at = _unix_to_mono(data["id_token_exp"])
+        if rt := data.get("refresh_token"):
+            self._refresh_token = rt
+        if (at := data.get("access_token")) and data.get("access_token_exp", 0) > now:
+            self._access_token = at
+            self._token_expires_at = _unix_to_mono(data["access_token_exp"])
+        _LOGGER.debug("Token cache restored from storage")
+
+    async def _save_token_cache(self) -> None:
+        """Persist current tokens to storage."""
+        if self._store is None:
+            return
+        mono = time.monotonic()
+        data: dict[str, Any] = {}
+        if self._login_token:
+            data["login_token"] = self._login_token
+            data["login_token_exp"] = _mono_to_unix(self._login_token_expires_at)
+            data["uid"] = self._uid
+        if self._id_token and mono < self._id_token_expires_at:
+            data["id_token"] = self._id_token
+            data["id_token_exp"] = _mono_to_unix(self._id_token_expires_at)
+        if self._refresh_token:
+            data["refresh_token"] = self._refresh_token
+        if self._access_token and mono < self._token_expires_at:
+            data["access_token"] = self._access_token
+            data["access_token_exp"] = _mono_to_unix(self._token_expires_at)
+        await self._store.async_save(data)
+        _LOGGER.debug("Token cache saved to storage")
+
     async def _ensure_token(self) -> str:
+        await self._load_token_cache()
         if self._access_token and time.monotonic() < self._token_expires_at:
             return self._access_token
         _LOGGER.debug("Fetching new ConnectLife access token")
         self._access_token = await self._fetch_access_token()
         self._token_expires_at = time.monotonic() + 86000  # 24 h with small buffer
+        await self._save_token_cache()
         return self._access_token
 
     async def _gigya_login(self) -> None:
@@ -231,9 +306,19 @@ class ConnectLifeApi:
         self._login_token_expires_at = time.monotonic() + int(max_age)
         self._uid = login_data["UID"]
         _LOGGER.debug("Gigya login_token cached for %s s", max_age)
+        await self._save_token_cache()
 
     async def _fetch_access_token(self) -> str:
-        """Perform the Gigya → OAuth flow, reusing a cached login_token when possible."""
+        """Obtain a fresh access_token, reusing cached tokens at each step where possible."""
+        # Fastest path: use refresh_token to skip steps 1-3 entirely.
+        if self._refresh_token:
+            try:
+                return await self._refresh_access_token()
+            except ConnectLifeAuthError:
+                _LOGGER.debug("refresh_token rejected; falling back to full flow")
+                self._refresh_token = None
+
+        # Ensure we have a valid Gigya login_token (step 1).
         if not self._login_token or time.monotonic() >= self._login_token_expires_at:
             await self._gigya_login()
 
@@ -243,26 +328,57 @@ class ConnectLifeApi:
             # login_token was revoked early; force a fresh login and retry once.
             _LOGGER.debug("login_token rejected; performing fresh Gigya login")
             self._login_token = None
+            self._id_token = None
             await self._gigya_login()
             return await self._exchange_login_token_for_access_token()
 
-    async def _exchange_login_token_for_access_token(self) -> str:
-        """Steps 2-4: login_token → JWT → OAuth code → access_token."""
-        # Step 2: Get JWT from Gigya
-        jwt_data = await self._request(
+    async def _refresh_access_token(self) -> str:
+        """Use a stored refresh_token to get a new access_token (skips steps 1-3)."""
+        token_data = await self._request(
             "POST",
-            "https://accounts.eu1.gigya.com/accounts.getJWT",
+            "https://oauth.hijuconn.com/oauth/token",
             form={
-                "APIKey": GIGYA_API_KEY,
-                "gmid": GIGYA_GMID,
-                "login_token": self._login_token,
+                "client_id": OAUTH_CLIENT_ID,
+                "client_secret": OAUTH_CLIENT_SECRET,
+                "grant_type": "refresh_token",
+                "refresh_token": self._refresh_token,
             },
         )
-        id_token = jwt_data.get("id_token")
-        if not id_token:
+        access_token = token_data.get("access_token")
+        if not access_token:
             raise ConnectLifeAuthError(
-                f"Failed to get JWT. Response: {json.dumps(jwt_data, indent=4)}"
+                f"Failed to refresh access token. Response: {json.dumps(token_data, indent=4)}"
             )
+        if new_refresh := token_data.get("refresh_token"):
+            self._refresh_token = new_refresh
+        return access_token
+
+    async def _exchange_login_token_for_access_token(self) -> str:
+        """Steps 2-4: login_token → JWT → OAuth code → access_token."""
+        # Step 2: Get JWT — skip if we have a cached id_token that's still valid.
+        if not self._id_token or time.monotonic() >= self._id_token_expires_at:
+            jwt_data = await self._request(
+                "POST",
+                "https://accounts.eu1.gigya.com/accounts.getJWT",
+                form={
+                    "APIKey": GIGYA_API_KEY,
+                    "gmid": GIGYA_GMID,
+                    "login_token": self._login_token,
+                },
+            )
+            id_token = jwt_data.get("id_token")
+            if not id_token:
+                raise ConnectLifeAuthError(
+                    f"Failed to get JWT. Response: {json.dumps(jwt_data, indent=4)}"
+                )
+            self._id_token = id_token
+            self._id_token_expires_at = _jwt_monotonic_expiry(id_token)
+            _LOGGER.debug(
+                "id_token cached, expires in %.0fs",
+                self._id_token_expires_at - time.monotonic(),
+            )
+        else:
+            _LOGGER.debug("Reusing cached id_token")
 
         # Step 3: Exchange JWT for OAuth authorization code
         auth_data = await self._request(
@@ -270,7 +386,7 @@ class ConnectLifeApi:
             "https://oauth.hijuconn.com/oauth/authorize",
             json_body={
                 "client_id": OAUTH_CLIENT_ID,
-                "idToken": id_token,
+                "idToken": self._id_token,
                 "response_type": "code",
                 "redirect_uri": OAUTH_REDIRECT_URI,
                 "thirdType": "CDC",
@@ -279,6 +395,8 @@ class ConnectLifeApi:
         )
         code = auth_data.get("code")
         if not code:
+            # id_token may have been rejected; clear it so next attempt fetches a fresh one.
+            self._id_token = None
             raise ConnectLifeAuthError(
                 f"Failed to get OAuth code. Response: {json.dumps(auth_data, indent=4)}"
             )
@@ -300,6 +418,9 @@ class ConnectLifeApi:
             raise ConnectLifeAuthError(
                 f"Failed to get access token. Response: {json.dumps(token_data, indent=4)}"
             )
+        if refresh_token := token_data.get("refresh_token"):
+            self._refresh_token = refresh_token
+            _LOGGER.debug("refresh_token stored")
         return access_token
 
     # ------------------------------------------------------------------
