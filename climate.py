@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from typing import TYPE_CHECKING, Any
@@ -23,9 +24,11 @@ from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.event import async_track_state_change_event
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .connectlife import entry_config
+from . import entry_config
 from .const import (
+    COMMAND_REFRESH_DELAY_SECONDS,
     CONF_BEEPING,
+    CONF_COMMAND_REFRESH_DELAY,
     CONF_CURRENT_HUMIDITY_ENTITY,
     CONF_CURRENT_TEMP_ENTITY,
     CONF_DEVICES_CONFIG,
@@ -85,6 +88,9 @@ async def async_setup_entry(
     external_temp_enabled = cfg.get(CONF_EXTERNAL_TEMP_ENABLED, True)
     current_humidity_entity = cfg.get(CONF_CURRENT_HUMIDITY_ENTITY)
     target_humidity = cfg.get(CONF_TARGET_HUMIDITY)
+    command_refresh_delay = int(
+        cfg.get(CONF_COMMAND_REFRESH_DELAY, COMMAND_REFRESH_DELAY_SECONDS)
+    )
 
     entities = [
         ConnectLifeClimate(
@@ -97,6 +103,7 @@ async def async_setup_entry(
             external_temp_enabled,
             current_humidity_entity,
             target_humidity,
+            command_refresh_delay,
         )
         for puid, device in coordinator.data.items()
     ]
@@ -199,12 +206,14 @@ class ConnectLifeClimate(CoordinatorEntity[ConnectLifeCoordinator], ClimateEntit
         external_temp_enabled: bool = True,
         current_humidity_entity: str | None = None,
         target_humidity: float | None = None,
+        command_refresh_delay: int = COMMAND_REFRESH_DELAY_SECONDS,
     ) -> None:
         super().__init__(coordinator)
         self._puid = puid
         self._beeping = beeping
         self._current_temp_entity = current_temp_entity
         self._external_temp_enabled = external_temp_enabled
+        self._command_refresh_delay = command_refresh_delay
         self._current_humidity_entity = current_humidity_entity
         self._target_humidity = (
             float(target_humidity) if target_humidity is not None else None
@@ -215,6 +224,7 @@ class ConnectLifeClimate(CoordinatorEntity[ConnectLifeCoordinator], ClimateEntit
         self._target_room_temp: float | None = (
             float(raw_temp) if raw_temp is not None else None
         )
+        self._optimistic_status: dict[str, Any] = {}
 
         feature_code = device.get("deviceFeatureCode", "")
         self._device_config = _get_device_config(devices_config, feature_code)
@@ -297,7 +307,15 @@ class ConnectLifeClimate(CoordinatorEntity[ConnectLifeCoordinator], ClimateEntit
         return self.coordinator.data.get(self._puid, {})
 
     def _status(self) -> dict[str, Any]:
-        return self._device().get("statusList", {})
+        base = self._device().get("statusList", {})
+        if self._optimistic_status:
+            return {**base, **self._optimistic_status}
+        return base
+
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        self._optimistic_status.clear()
+        super()._handle_coordinator_update()
 
     @property
     def temperature_unit(self) -> str:
@@ -434,6 +452,15 @@ class ConnectLifeClimate(CoordinatorEntity[ConnectLifeCoordinator], ClimateEntit
     # Commands
     # ------------------------------------------------------------------
 
+    def _schedule_refresh(self) -> None:
+        """Schedule a coordinator refresh after a short delay, resetting the poll timer."""
+
+        async def _refresh() -> None:
+            await asyncio.sleep(self._command_refresh_delay)
+            await self.coordinator.async_request_refresh()
+
+        self.hass.async_create_task(_refresh())
+
     def _build_properties(
         self, overrides: dict[str, Any] | None = None
     ) -> dict[str, Any]:
@@ -481,15 +508,18 @@ class ConnectLifeClimate(CoordinatorEntity[ConnectLifeCoordinator], ClimateEntit
     async def async_set_hvac_mode(self, hvac_mode: HVACMode) -> None:
         """Set HVAC mode."""
         if hvac_mode == HVACMode.OFF:
-            props = self._build_properties({"t_power": 0})
+            overrides: dict[str, Any] = {"t_power": 0}
         else:
             cl_name = _CL_MODE_MAP.get(hvac_mode, "auto")
             slug = cl_name.replace(" ", "_").lower()
             mode_val = self._mode_options.get(slug, "4")
-            props = self._build_properties({"t_power": 1, "t_work_mode": int(mode_val)})
+            overrides = {"t_power": 1, "t_work_mode": int(mode_val)}
 
+        props = self._build_properties(overrides)
+        self._optimistic_status.update(overrides)
+        self.async_write_ha_state()
         await self.coordinator.api.update_device(self._puid, props)
-        await self.coordinator.async_request_refresh()
+        self._schedule_refresh()
 
     async def async_set_temperature(self, **kwargs: Any) -> None:
         """Set target temperature."""
@@ -503,9 +533,12 @@ class ConnectLifeClimate(CoordinatorEntity[ConnectLifeCoordinator], ClimateEntit
             self.async_write_ha_state()
             await self._async_control()
         else:
-            props = self._build_properties({"t_temp": int(temp)})
+            overrides = {"t_temp": int(temp)}
+            props = self._build_properties(overrides)
+            self._optimistic_status.update(overrides)
+            self.async_write_ha_state()
             await self.coordinator.api.update_device(self._puid, props)
-            await self.coordinator.async_request_refresh()
+            self._schedule_refresh()
 
     async def async_set_humidity(self, humidity: float) -> None:
         """Set target humidity for dry-mode control."""
@@ -519,9 +552,12 @@ class ConnectLifeClimate(CoordinatorEntity[ConnectLifeCoordinator], ClimateEntit
         if fan_val is None:
             _LOGGER.warning("Unknown fan mode: %s", fan_mode)
             return
-        props = self._build_properties({"t_fan_speed": int(fan_val)})
+        overrides = {"t_fan_speed": int(fan_val)}
+        props = self._build_properties(overrides)
+        self._optimistic_status.update(overrides)
+        self.async_write_ha_state()
         await self.coordinator.api.update_device(self._puid, props)
-        await self.coordinator.async_request_refresh()
+        self._schedule_refresh()
 
     async def async_set_swing_mode(self, swing_mode: str) -> None:
         """Set swing mode."""
@@ -537,8 +573,10 @@ class ConnectLifeClimate(CoordinatorEntity[ConnectLifeCoordinator], ClimateEntit
         else:  # up_down
             overrides = {"t_up_down": int(swing_vals["t_up_down"])}
         props = self._build_properties(overrides)
+        self._optimistic_status.update(overrides)
+        self.async_write_ha_state()
         await self.coordinator.api.update_device(self._puid, props)
-        await self.coordinator.async_request_refresh()
+        self._schedule_refresh()
 
     async def async_set_preset_mode(self, preset_mode: str) -> None:
         """Set preset mode."""
@@ -550,20 +588,28 @@ class ConnectLifeClimate(CoordinatorEntity[ConnectLifeCoordinator], ClimateEntit
         elif preset_mode == PRESET_BOOST:
             overrides["t_super"] = 1
         props = self._build_properties(overrides)
+        self._optimistic_status.update(overrides)
+        self.async_write_ha_state()
         await self.coordinator.api.update_device(self._puid, props)
-        await self.coordinator.async_request_refresh()
+        self._schedule_refresh()
 
     async def async_turn_on(self) -> None:
         """Turn the AC on."""
-        props = self._build_properties({"t_power": 1})
+        overrides: dict[str, Any] = {"t_power": 1}
+        props = self._build_properties(overrides)
+        self._optimistic_status.update(overrides)
+        self.async_write_ha_state()
         await self.coordinator.api.update_device(self._puid, props)
-        await self.coordinator.async_request_refresh()
+        self._schedule_refresh()
 
     async def async_turn_off(self) -> None:
         """Turn the AC off."""
-        props = self._build_properties({"t_power": 0})
+        overrides: dict[str, Any] = {"t_power": 0}
+        props = self._build_properties(overrides)
+        self._optimistic_status.update(overrides)
+        self.async_write_ha_state()
         await self.coordinator.api.update_device(self._puid, props)
-        await self.coordinator.async_request_refresh()
+        self._schedule_refresh()
 
     # ------------------------------------------------------------------
     # External sensor tracking

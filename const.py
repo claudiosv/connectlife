@@ -10,11 +10,14 @@ CONF_CURRENT_TEMP_ENTITY = "current_temperature_entity"
 CONF_EXTERNAL_TEMP_ENABLED = "external_temp_enabled"
 CONF_CURRENT_HUMIDITY_ENTITY = "current_humidity_entity"
 CONF_TARGET_HUMIDITY = "target_humidity"
+CONF_POLL_INTERVAL = "poll_interval"
+CONF_COMMAND_REFRESH_DELAY = "command_refresh_delay"
 
 TEMP_UNIT_CELSIUS = "celsius"
 TEMP_UNIT_FAHRENHEIT = "fahrenheit"
 
 UPDATE_INTERVAL_SECONDS = 60
+COMMAND_REFRESH_DELAY_SECONDS = 5  # seconds after a command before re-polling the cloud
 TOKEN_CACHE_SECONDS = 86400  # 24 hours
 ENERGY_CACHE_SECONDS = 600  # 10 minutes
 

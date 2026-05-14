@@ -9,8 +9,12 @@ import json
 import logging
 import secrets
 import time
-from datetime import date
-from typing import Any, Literal
+from datetime import date, datetime
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, Literal
+
+if TYPE_CHECKING:
+    from homeassistant.core import HomeAssistant
 
 import aiohttp
 from cryptography.hazmat.primitives import serialization
@@ -91,13 +95,21 @@ class ConnectLifeApi:
     """Client for the ConnectLife API."""
 
     def __init__(
-        self, session: aiohttp.ClientSession, username: str, password: str
+        self,
+        session: aiohttp.ClientSession,
+        username: str,
+        password: str,
+        hass: HomeAssistant | None = None,
     ) -> None:
         self._session = session
         self._username = username
         self._password = password
+        self._hass = hass
         self._access_token: str | None = None
         self._token_expires_at: float = 0.0
+        self._login_token: str | None = None
+        self._login_token_expires_at: float = 0.0
+        self._uid: str | None = None
         self._public_key = serialization.load_pem_public_key(PUBLIC_KEY_PEM.encode())
 
     # ------------------------------------------------------------------
@@ -115,6 +127,7 @@ class ConnectLifeApi:
     ) -> Any:
         """Make an HTTP request with tenacity-managed retries and backoff."""
         headers = {"User-Agent": _USER_AGENT}
+
         try:
             async for attempt in AsyncRetrying(
                 retry=retry_if_exception_type((_RetryableError, aiohttp.ClientError)),
@@ -138,7 +151,39 @@ class ConnectLifeApi:
                                 retry_after=_parse_retry_after(resp.headers),
                             )
                         resp.raise_for_status()
-                        return await resp.json(content_type=None)
+                        response_json = await resp.json(content_type=None)
+
+                        if self._hass is not None:
+                            log_dir = Path(self._hass.config.path("connectlife_logs"))
+                            log_dir.mkdir(exist_ok=True)
+                            timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+                            full_path = log_dir / f"ac_state_{timestamp}.json"
+                            json_log = {
+                                "method": method,
+                                "url": url,
+                                "params": params,
+                                "json": json_body,
+                                "data": form,
+                                "headers": headers,
+                                "resp_status": resp.status,
+                                "response": response_json,
+                            }
+
+                            def _write(data: dict, path: Path) -> None:
+                                try:
+                                    path.write_text(
+                                        json.dumps(data, indent=4), encoding="utf-8"
+                                    )
+                                except Exception as exc:
+                                    _LOGGER.error(
+                                        "Failed to write request log: %s", exc
+                                    )
+
+                            await self._hass.async_add_executor_job(
+                                _write, json_log, full_path
+                            )
+
+                        return response_json
         except _RetryableError as exc:
             raise ConnectLifeRateLimitError(
                 f"Request to {url} failed after {RETRY_ATTEMPTS} attempts: {exc}"
@@ -162,9 +207,8 @@ class ConnectLifeApi:
         self._token_expires_at = time.monotonic() + 86000  # 24 h with small buffer
         return self._access_token
 
-    async def _fetch_access_token(self) -> str:
-        """Perform the full Gigya → OAuth authentication flow."""
-        # Step 1: Login to Gigya
+    async def _gigya_login(self) -> None:
+        """POST to accounts.login and cache the resulting login_token and UID."""
         login_data = await self._request(
             "POST",
             "https://accounts.eu1.gigya.com/accounts.login",
@@ -175,13 +219,35 @@ class ConnectLifeApi:
                 "gmid": GIGYA_GMID,
             },
         )
-        cookie_value = (login_data.get("sessionInfo") or {}).get("cookieValue")
+        session_info = login_data.get("sessionInfo") or {}
+        cookie_value = session_info.get("cookieValue")
         if not cookie_value:
             raise ConnectLifeAuthError(
-                f"Gigya login failed. Response: {json.dumps(login_data)}"
+                f"Gigya login failed. Response: {json.dumps(login_data, indent=4)}"
             )
-        uid = login_data["UID"]
+        # Use the server-reported max-age if present; fall back to 13 days.
+        max_age = session_info.get("cookieMaxAge") or (13 * 24 * 3600)
+        self._login_token = cookie_value
+        self._login_token_expires_at = time.monotonic() + int(max_age)
+        self._uid = login_data["UID"]
+        _LOGGER.debug("Gigya login_token cached for %s s", max_age)
 
+    async def _fetch_access_token(self) -> str:
+        """Perform the Gigya → OAuth flow, reusing a cached login_token when possible."""
+        if not self._login_token or time.monotonic() >= self._login_token_expires_at:
+            await self._gigya_login()
+
+        try:
+            return await self._exchange_login_token_for_access_token()
+        except ConnectLifeAuthError:
+            # login_token was revoked early; force a fresh login and retry once.
+            _LOGGER.debug("login_token rejected; performing fresh Gigya login")
+            self._login_token = None
+            await self._gigya_login()
+            return await self._exchange_login_token_for_access_token()
+
+    async def _exchange_login_token_for_access_token(self) -> str:
+        """Steps 2-4: login_token → JWT → OAuth code → access_token."""
         # Step 2: Get JWT from Gigya
         jwt_data = await self._request(
             "POST",
@@ -189,13 +255,13 @@ class ConnectLifeApi:
             form={
                 "APIKey": GIGYA_API_KEY,
                 "gmid": GIGYA_GMID,
-                "login_token": cookie_value,
+                "login_token": self._login_token,
             },
         )
         id_token = jwt_data.get("id_token")
         if not id_token:
             raise ConnectLifeAuthError(
-                f"Failed to get JWT. Response: {json.dumps(jwt_data)}"
+                f"Failed to get JWT. Response: {json.dumps(jwt_data, indent=4)}"
             )
 
         # Step 3: Exchange JWT for OAuth authorization code
@@ -208,13 +274,13 @@ class ConnectLifeApi:
                 "response_type": "code",
                 "redirect_uri": OAUTH_REDIRECT_URI,
                 "thirdType": "CDC",
-                "thirdClientId": uid,
+                "thirdClientId": self._uid,
             },
         )
         code = auth_data.get("code")
         if not code:
             raise ConnectLifeAuthError(
-                f"Failed to get OAuth code. Response: {json.dumps(auth_data)}"
+                f"Failed to get OAuth code. Response: {json.dumps(auth_data, indent=4)}"
             )
 
         # Step 4: Exchange code for access token
@@ -232,7 +298,7 @@ class ConnectLifeApi:
         access_token = token_data.get("access_token")
         if not access_token:
             raise ConnectLifeAuthError(
-                f"Failed to get access token. Response: {json.dumps(token_data)}"
+                f"Failed to get access token. Response: {json.dumps(token_data, indent=4)}"
             )
         return access_token
 
@@ -245,7 +311,7 @@ class ConnectLifeApi:
         parts = []
         for k, v in sorted_items:
             if isinstance(v, (dict, list)):
-                v = json.dumps(v, separators=(",", ":"))
+                v = json.dumps(v, separators=(",", ":"), indent=4)
             parts.append(f"{k}={v}")
         to_hash = "&".join(parts) + SIGN_MAGIC
         digest = hashlib.sha256(to_hash.encode()).digest()
@@ -279,7 +345,9 @@ class ConnectLifeApi:
             params=params,
         )
 
-        _LOGGER.debug("get_device_status_list raw response: %s", json.dumps(body))
+        _LOGGER.debug(
+            "get_device_status_list raw response: %s", json.dumps(body, indent=4)
+        )
 
         response = body.get("response", {})
         if "deviceList" not in response:
@@ -290,23 +358,23 @@ class ConnectLifeApi:
 
         devices: list[dict[str, Any]] = response["deviceList"]
 
-        for i, device in enumerate(devices):
-            if i > 0:
-                await asyncio.sleep(ENERGY_REQUEST_DELAY)
-            try:
-                energy = await self.get_device_energy(device["puid"])
-                kwh = (energy.get("resultData") or {}).get("electricTotal")
-                if kwh is not None:
-                    device.setdefault("statusList", {})["daily_energy_kwh"] = kwh
-            except ConnectLifeRateLimitError:
-                _LOGGER.warning(
-                    "Rate-limited fetching energy for %s; skipping this poll",
-                    device.get("puid"),
-                )
-            except Exception as exc:
-                _LOGGER.debug(
-                    "Could not fetch energy for %s: %s", device.get("puid"), exc
-                )
+        # for i, device in enumerate(devices):
+        #     if i > 0:
+        #         await asyncio.sleep(ENERGY_REQUEST_DELAY)
+        #     try:
+        #         energy = await self.get_device_energy(device["puid"])
+        #         kwh = (energy.get("resultData") or {}).get("electricTotal")
+        #         if kwh is not None:
+        #             device.setdefault("statusList", {})["daily_energy_kwh"] = kwh
+        #     except ConnectLifeRateLimitError:
+        #         _LOGGER.warning(
+        #             "Rate-limited fetching energy for %s; skipping this poll",
+        #             device.get("puid"),
+        #         )
+        #     except Exception as exc:
+        #         _LOGGER.debug(
+        #             "Could not fetch energy for %s: %s", device.get("puid"), exc
+        #         )
 
         return devices
 

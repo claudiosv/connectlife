@@ -7,9 +7,9 @@ from homeassistant.const import CONF_PASSWORD, CONF_USERNAME, Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
-from ..api import ConnectLifeApi
-from ..const import DOMAIN
-from ..coordinator import ConnectLifeCoordinator
+from .api import ConnectLifeApi
+from .const import CONF_POLL_INTERVAL, DOMAIN, UPDATE_INTERVAL_SECONDS
+from .coordinator import ConnectLifeCoordinator
 
 PLATFORMS = [Platform.CLIMATE, Platform.SENSOR]
 
@@ -27,9 +27,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         session=session,
         username=cfg[CONF_USERNAME],
         password=cfg[CONF_PASSWORD],
+        hass=hass,
     )
 
-    coordinator = ConnectLifeCoordinator(hass, api)
+    poll_interval = int(cfg.get(CONF_POLL_INTERVAL, UPDATE_INTERVAL_SECONDS))
+    coordinator = ConnectLifeCoordinator(hass, api, poll_interval)
     await coordinator.async_config_entry_first_refresh()
 
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = coordinator

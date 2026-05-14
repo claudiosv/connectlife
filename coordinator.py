@@ -23,12 +23,17 @@ _LOGGER = logging.getLogger(__name__)
 class ConnectLifeCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
     """Coordinator that polls ConnectLife for device state."""
 
-    def __init__(self, hass: HomeAssistant, api: ConnectLifeApi) -> None:
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        api: ConnectLifeApi,
+        update_interval_seconds: int = UPDATE_INTERVAL_SECONDS,
+    ) -> None:
         super().__init__(
             hass,
             _LOGGER,
             name=DOMAIN,
-            update_interval=timedelta(seconds=UPDATE_INTERVAL_SECONDS),
+            update_interval=timedelta(seconds=update_interval_seconds),
         )
         self.api = api
 

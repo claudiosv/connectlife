@@ -27,134 +27,154 @@ from homeassistant.helpers.selector import (
 
 from .api import ConnectLifeApi, ConnectLifeAuthError
 from .const import (
+    COMMAND_REFRESH_DELAY_SECONDS,
     CONF_BEEPING,
+    CONF_COMMAND_REFRESH_DELAY,
     CONF_CURRENT_HUMIDITY_ENTITY,
     CONF_CURRENT_TEMP_ENTITY,
     CONF_DEVICES_CONFIG,
     CONF_EXTERNAL_TEMP_ENABLED,
+    CONF_POLL_INTERVAL,
     CONF_TARGET_HUMIDITY,
     CONF_TEMPERATURE_SENSORS,
     CONF_TEMPERATURE_UNIT,
     DOMAIN,
     TEMP_UNIT_CELSIUS,
     TEMP_UNIT_FAHRENHEIT,
+    UPDATE_INTERVAL_SECONDS,
 )
 
 _LOGGER = logging.getLogger(__name__)
 
-_DEFAULT_DEVICES_CONFIG = json.dumps(
-    {
-        "200": {
-            "t_work_mode": ["fan only", "cool", "dry", "auto"],
-            "t_fan_speed": {
-                "0": "auto",
-                "1": "super low",
-                "2": "low",
-                "3": "medium",
-                "4": "high",
-            },
-            "t_up_down": {"0": "SWING_OFF", "1": "SWING_ON"},
+_DEFAULT_DEVICES_CONFIG = json.dumps({
+    "200": {
+        "t_work_mode": ["fan only", "cool", "dry", "auto"],
+        "t_fan_speed": {
+            "0": "auto",
+            "1": "super low",
+            "2": "low",
+            "3": "medium",
+            "4": "high",
         },
-        "201": {
-            "t_work_mode": ["fan only", "cool", "dry", "auto"],
-            "t_fan_speed": {
-                "0": "auto",
-                "1": "super low",
-                "2": "low",
-                "3": "medium",
-                "4": "high",
-            },
-            "t_up_down": {"0": "off", "1": "on"},
+        "t_up_down": {"0": "SWING_OFF", "1": "SWING_ON"},
+    },
+    "201": {
+        "t_work_mode": ["fan only", "cool", "dry", "auto"],
+        "t_fan_speed": {
+            "0": "auto",
+            "1": "super low",
+            "2": "low",
+            "3": "medium",
+            "4": "high",
         },
-        "117": {
-            "t_work_mode": ["fan only", "heat", "cool", "dry", "auto"],
-            "t_fan_speed": {
-                "0": "auto",
-                "5": "super low",
-                "6": "low",
-                "7": "medium",
-                "8": "high",
-                "9": "super high",
-            },
-            "t_swing_direction": ["straight", "right", "both sides", "swing", "left"],
-            "t_swing_angle": {
-                "0": "swing",
-                "2": "bottom 1/6",
-                "3": "bottom 2/6",
-                "4": "bottom 3/6",
-                "5": "top 4/6",
-                "6": "top 5/6",
-                "7": "top 6/6",
-            },
+        "t_up_down": {"0": "off", "1": "on"},
+    },
+    "117": {
+        "t_work_mode": ["fan only", "heat", "cool", "dry", "auto"],
+        "t_fan_speed": {
+            "0": "auto",
+            "5": "super low",
+            "6": "low",
+            "7": "medium",
+            "8": "high",
+            "9": "super high",
         },
-    }
-)
+        "t_swing_direction": ["straight", "right", "both sides", "swing", "left"],
+        "t_swing_angle": {
+            "0": "swing",
+            "2": "bottom 1/6",
+            "3": "bottom 2/6",
+            "4": "bottom 3/6",
+            "5": "top 4/6",
+            "6": "top 5/6",
+            "7": "top 6/6",
+        },
+    },
+})
 
-STEP_USER_SCHEMA = vol.Schema(
-    {
-        vol.Required(CONF_USERNAME): str,
-        vol.Required(CONF_PASSWORD): str,
-        vol.Optional(CONF_BEEPING, default=False): bool,
-        vol.Optional(CONF_TEMPERATURE_UNIT, default=TEMP_UNIT_CELSIUS): vol.In(
-            [
-                TEMP_UNIT_CELSIUS,
-                TEMP_UNIT_FAHRENHEIT,
-            ]
-        ),
-        vol.Optional(CONF_TEMPERATURE_SENSORS, default=False): bool,
-        vol.Optional(CONF_DEVICES_CONFIG, default=_DEFAULT_DEVICES_CONFIG): str,
-    }
-)
+STEP_USER_SCHEMA = vol.Schema({
+    vol.Required(CONF_USERNAME): str,
+    vol.Required(CONF_PASSWORD): str,
+    vol.Optional(CONF_BEEPING, default=False): bool,
+    vol.Optional(CONF_TEMPERATURE_UNIT, default=TEMP_UNIT_CELSIUS): vol.In([
+        TEMP_UNIT_CELSIUS,
+        TEMP_UNIT_FAHRENHEIT,
+    ]),
+    vol.Optional(CONF_TEMPERATURE_SENSORS, default=False): bool,
+    vol.Optional(CONF_DEVICES_CONFIG, default=_DEFAULT_DEVICES_CONFIG): str,
+})
 
 
 def _options_schema(current: dict[str, Any]) -> vol.Schema:
     """Build the options schema pre-filled with current values."""
-    return vol.Schema(
-        {
-            vol.Required(CONF_PASSWORD, default=current.get(CONF_PASSWORD, "")): str,
-            vol.Optional(CONF_BEEPING, default=current.get(CONF_BEEPING, False)): bool,
-            vol.Optional(
-                CONF_TEMPERATURE_UNIT,
-                default=current.get(CONF_TEMPERATURE_UNIT, TEMP_UNIT_CELSIUS),
-            ): vol.In([TEMP_UNIT_CELSIUS, TEMP_UNIT_FAHRENHEIT]),
-            vol.Optional(
-                CONF_TEMPERATURE_SENSORS,
-                default=current.get(CONF_TEMPERATURE_SENSORS, False),
-            ): bool,
-            vol.Optional(
-                CONF_CURRENT_TEMP_ENTITY,
-                description={"suggested_value": current.get(CONF_CURRENT_TEMP_ENTITY)},
-            ): EntitySelector(
-                EntitySelectorConfig(
-                    domain="sensor", device_class="temperature", multiple=False
-                )
+    return vol.Schema({
+        vol.Required(CONF_PASSWORD, default=current.get(CONF_PASSWORD, "")): str,
+        vol.Optional(CONF_BEEPING, default=current.get(CONF_BEEPING, False)): bool,
+        vol.Optional(
+            CONF_TEMPERATURE_UNIT,
+            default=current.get(CONF_TEMPERATURE_UNIT, TEMP_UNIT_CELSIUS),
+        ): vol.In([TEMP_UNIT_CELSIUS, TEMP_UNIT_FAHRENHEIT]),
+        vol.Optional(
+            CONF_TEMPERATURE_SENSORS,
+            default=current.get(CONF_TEMPERATURE_SENSORS, False),
+        ): bool,
+        vol.Optional(
+            CONF_CURRENT_TEMP_ENTITY,
+            description={"suggested_value": current.get(CONF_CURRENT_TEMP_ENTITY)},
+        ): EntitySelector(
+            EntitySelectorConfig(
+                domain="sensor", device_class="temperature", multiple=False
+            )
+        ),
+        vol.Optional(
+            CONF_EXTERNAL_TEMP_ENABLED,
+            default=current.get(CONF_EXTERNAL_TEMP_ENABLED, True),
+        ): bool,
+        vol.Optional(
+            CONF_CURRENT_HUMIDITY_ENTITY,
+            description={"suggested_value": current.get(CONF_CURRENT_HUMIDITY_ENTITY)},
+        ): EntitySelector(
+            EntitySelectorConfig(
+                domain="sensor", device_class="humidity", multiple=False
+            )
+        ),
+        vol.Optional(
+            CONF_TARGET_HUMIDITY,
+            description={"suggested_value": current.get(CONF_TARGET_HUMIDITY)},
+        ): NumberSelector(
+            NumberSelectorConfig(min=30, max=80, step=1, mode=NumberSelectorMode.BOX)
+        ),
+        vol.Optional(
+            CONF_POLL_INTERVAL,
+            default=current.get(CONF_POLL_INTERVAL, UPDATE_INTERVAL_SECONDS),
+        ): NumberSelector(
+            NumberSelectorConfig(
+                min=10,
+                max=3600,
+                step=10,
+                mode=NumberSelectorMode.BOX,
+                unit_of_measurement="s",
+            )
+        ),
+        vol.Optional(
+            CONF_COMMAND_REFRESH_DELAY,
+            default=current.get(
+                CONF_COMMAND_REFRESH_DELAY, COMMAND_REFRESH_DELAY_SECONDS
             ),
-            vol.Optional(
-                CONF_EXTERNAL_TEMP_ENABLED,
-                default=current.get(CONF_EXTERNAL_TEMP_ENABLED, True),
-            ): bool,
-            vol.Optional(
-                CONF_CURRENT_HUMIDITY_ENTITY,
-                description={
-                    "suggested_value": current.get(CONF_CURRENT_HUMIDITY_ENTITY)
-                },
-            ): EntitySelector(
-                EntitySelectorConfig(
-                    domain="sensor", device_class="humidity", multiple=False
-                )
-            ),
-            vol.Optional(
-                CONF_TARGET_HUMIDITY,
-                description={"suggested_value": current.get(CONF_TARGET_HUMIDITY)},
-            ): NumberSelector(
-                NumberSelectorConfig(min=30, max=80, step=1, mode=NumberSelectorMode.BOX)
-            ),
-            vol.Optional(
-                CONF_DEVICES_CONFIG,
-                default=current.get(CONF_DEVICES_CONFIG, _DEFAULT_DEVICES_CONFIG),
-            ): str,
-        }
-    )
+        ): NumberSelector(
+            NumberSelectorConfig(
+                min=1,
+                max=60,
+                step=1,
+                mode=NumberSelectorMode.BOX,
+                unit_of_measurement="s",
+            )
+        ),
+        vol.Optional(
+            CONF_DEVICES_CONFIG,
+            default=current.get(CONF_DEVICES_CONFIG, _DEFAULT_DEVICES_CONFIG),
+        ): str,
+    })
 
 
 class ConnectLifeConfigFlow(ConfigFlow, domain=DOMAIN):
@@ -185,7 +205,10 @@ class ConnectLifeConfigFlow(ConfigFlow, domain=DOMAIN):
 
                 session = async_get_clientsession(self.hass)
                 api = ConnectLifeApi(
-                    session, user_input[CONF_USERNAME], user_input[CONF_PASSWORD]
+                    session,
+                    user_input[CONF_USERNAME],
+                    user_input[CONF_PASSWORD],
+                    self.hass,
                 )
                 try:
                     valid = await api.validate_credentials()
@@ -241,6 +264,7 @@ class ConnectLifeOptionsFlow(OptionsFlow):
                         session,
                         self._config_entry.data[CONF_USERNAME],
                         new_password,
+                        self.hass,
                     )
                     try:
                         valid = await api.validate_credentials()
@@ -280,6 +304,13 @@ class ConnectLifeOptionsFlow(OptionsFlow):
                                 CONF_CURRENT_HUMIDITY_ENTITY
                             ),
                             CONF_TARGET_HUMIDITY: user_input.get(CONF_TARGET_HUMIDITY),
+                            CONF_POLL_INTERVAL: user_input.get(
+                                CONF_POLL_INTERVAL, UPDATE_INTERVAL_SECONDS
+                            ),
+                            CONF_COMMAND_REFRESH_DELAY: user_input.get(
+                                CONF_COMMAND_REFRESH_DELAY,
+                                COMMAND_REFRESH_DELAY_SECONDS,
+                            ),
                             CONF_DEVICES_CONFIG: user_input[CONF_DEVICES_CONFIG],
                         },
                     )

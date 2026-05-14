@@ -16,7 +16,7 @@ from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .connectlife import entry_config
+from . import entry_config
 from .const import (
     CONF_TEMPERATURE_SENSORS,
     DOMAIN,
@@ -37,8 +37,8 @@ async def async_setup_entry(
 
     entities: list[SensorEntity] = []
     for puid, device in coordinator.data.items():
-        if "daily_energy_kwh" in device.get("statusList", {}):
-            entities.append(ConnectLifeEnergySensor(coordinator, puid, device))
+        # if "daily_energy_kwh" in device.get("statusList", {}):
+        #     entities.append(ConnectLifeEnergySensor(coordinator, puid, device))
 
         if temp_sensors_enabled:
             entities.append(ConnectLifeCurrentTempSensor(coordinator, puid, device))
