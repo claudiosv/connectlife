@@ -1,0 +1,38 @@
+#        "pydantic>=2.0.0"
+#
+[project]
+name = "connectlife"
+version = "1.0.0"
+description = "ConnectLife Home Assistant custom integration"
+requires-python = ">=3.12"
+dependencies = [
+    "aiohttp>=3.11.11",
+    "cryptography>=42.0.0",
+    "pydantic>=2.13.4",
+    "tenacity>=8.2.0",
+]
+
+[dependency-groups]
+dev = [
+    "homeassistant>=2024.6.0",
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+    "pyright>=1.1.350",
+    "ruff>=0.9.0",
+    "typer>=0.12.0",
+    "rich>=13.0.0",
+]
+
+[tool.ruff]
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "C4", "RUF"]
+ignore = ["E501"]  # line length — not enforced
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+
+[tool.pyright]
+pythonVersion = "3.12"
+typeCheckingMode = "basic"
