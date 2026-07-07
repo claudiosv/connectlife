@@ -682,6 +682,11 @@ class ConnectLifeClimate(CoordinatorEntity[ConnectLifeCoordinator], ClimateEntit
 
         async def _refresh() -> None:
             await asyncio.sleep(self._command_refresh_delay)
+            _LOGGER.debug(
+                "[%s] Requesting coordinator refresh after %.1fs command delay",
+                self._puid,
+                self._command_refresh_delay,
+            )
             await self.coordinator.async_request_refresh()
 
         self.hass.async_create_task(_refresh())
@@ -693,6 +698,7 @@ class ConnectLifeClimate(CoordinatorEntity[ConnectLifeCoordinator], ClimateEntit
         _DEBOUNCE_DELAY seconds of inactivity.
         """
         self._pending_overrides.update(overrides)
+        _LOGGER.debug("[%s] Enqueued overrides: %s", self._puid, overrides)
         if self._debounce_task and not self._debounce_task.done():
             self._debounce_task.cancel()
         self._debounce_task = self.hass.async_create_task(self._flush_pending())
@@ -703,6 +709,9 @@ class ConnectLifeClimate(CoordinatorEntity[ConnectLifeCoordinator], ClimateEntit
         overrides = dict(self._pending_overrides)
         self._pending_overrides.clear()
         props = self._build_properties(overrides)
+        _LOGGER.debug(
+            "[%s] Sending debounced update to ConnectLife: %s", self._puid, props
+        )
         await self.coordinator.api.update_device(self._puid, props)
         self._schedule_refresh()
 
@@ -757,6 +766,7 @@ class ConnectLifeClimate(CoordinatorEntity[ConnectLifeCoordinator], ClimateEntit
 
     async def async_set_hvac_mode(self, hvac_mode: HVACMode) -> None:
         """Set HVAC mode."""
+        _LOGGER.debug("[%s] async_set_hvac_mode(%s)", self._puid, hvac_mode)
         if hvac_mode == HVACMode.OFF:
             overrides: dict[str, Any] = {"t_power": 0}
         else:
@@ -775,6 +785,12 @@ class ConnectLifeClimate(CoordinatorEntity[ConnectLifeCoordinator], ClimateEntit
         self.async_write_ha_state()
 
         if self._matter_climate_entity and hvac_mode in _MATTER_SUPPORTED_MODES:
+            _LOGGER.debug(
+                "[%s] Sending set_hvac_mode=%s to Matter entity %s",
+                self._puid,
+                hvac_mode,
+                self._matter_climate_entity,
+            )
             try:
                 await self.hass.services.async_call(
                     "climate",
@@ -791,6 +807,9 @@ class ConnectLifeClimate(CoordinatorEntity[ConnectLifeCoordinator], ClimateEntit
                 )
                 self._enqueue(overrides)
             else:
+                _LOGGER.debug(
+                    "[%s] Matter set_hvac_mode succeeded", self._puid
+                )
                 self._schedule_refresh()
         else:
             self._enqueue(overrides)
@@ -798,6 +817,7 @@ class ConnectLifeClimate(CoordinatorEntity[ConnectLifeCoordinator], ClimateEntit
     async def async_set_temperature(self, **kwargs: Any) -> None:
         """Set target temperature."""
         temp = kwargs.get("temperature")
+        _LOGGER.debug("[%s] async_set_temperature(temperature=%r)", self._puid, temp)
         if temp is None:
             return
         if self.hvac_mode in (HVACMode.AUTO, HVACMode.DRY, HVACMode.FAN_ONLY):
@@ -808,6 +828,11 @@ class ConnectLifeClimate(CoordinatorEntity[ConnectLifeCoordinator], ClimateEntit
         if self._current_temp_entity and self._external_temp_enabled:
             # External sensor mode: store desired room temp and let the thermostat
             # logic decide the actual API target.
+            _LOGGER.debug(
+                "[%s] External sensor mode: storing desired room temp %r",
+                self._puid,
+                temp,
+            )
             self._target_room_temp = float(temp)
             self.async_write_ha_state()
             await self._async_control()
@@ -816,6 +841,13 @@ class ConnectLifeClimate(CoordinatorEntity[ConnectLifeCoordinator], ClimateEntit
             self._set_optimistic(overrides)
             self.async_write_ha_state()
             matter_temp = self._clamp_for_matter(float(temp))
+            _LOGGER.debug(
+                "[%s] Sending set_temperature=%r (clamped from %r) to Matter entity %s",
+                self._puid,
+                matter_temp,
+                temp,
+                self._matter_climate_entity,
+            )
             try:
                 await self.hass.services.async_call(
                     "climate",
@@ -837,6 +869,7 @@ class ConnectLifeClimate(CoordinatorEntity[ConnectLifeCoordinator], ClimateEntit
                 )
                 self._enqueue(overrides)
             else:
+                _LOGGER.debug("[%s] Matter set_temperature succeeded", self._puid)
                 self._schedule_refresh()
         else:
             overrides = {"t_temp": int(temp)}
@@ -846,12 +879,14 @@ class ConnectLifeClimate(CoordinatorEntity[ConnectLifeCoordinator], ClimateEntit
 
     async def async_set_humidity(self, humidity: float) -> None:
         """Set target humidity for dry-mode control."""
+        _LOGGER.debug("[%s] async_set_humidity(%r)", self._puid, humidity)
         self._target_humidity = humidity
         self.async_write_ha_state()
         await self._async_control()
 
     async def async_set_fan_mode(self, fan_mode: str) -> None:
         """Set fan mode."""
+        _LOGGER.debug("[%s] async_set_fan_mode(%r)", self._puid, fan_mode)
         fan_val = self._fan_options.get(fan_mode)
         if fan_val is None:
             _LOGGER.warning("Unknown fan mode: %s", fan_mode)
@@ -885,6 +920,7 @@ class ConnectLifeClimate(CoordinatorEntity[ConnectLifeCoordinator], ClimateEntit
 
     async def async_set_swing_mode(self, swing_mode: str) -> None:
         """Set swing mode."""
+        _LOGGER.debug("[%s] async_set_swing_mode(%r)", self._puid, swing_mode)
         swing_vals = self._swing_options.get(swing_mode)
         if swing_vals is None:
             _LOGGER.warning("Unknown swing mode: %s", swing_mode)
@@ -902,6 +938,7 @@ class ConnectLifeClimate(CoordinatorEntity[ConnectLifeCoordinator], ClimateEntit
 
     async def async_set_preset_mode(self, preset_mode: str) -> None:
         """Set preset mode."""
+        _LOGGER.debug("[%s] async_set_preset_mode(%r)", self._puid, preset_mode)
         mode = self.hvac_mode
         if mode in (HVACMode.AUTO, HVACMode.FAN_ONLY):
             _LOGGER.warning("Preset modes are not supported in %s mode", mode)
@@ -932,6 +969,7 @@ class ConnectLifeClimate(CoordinatorEntity[ConnectLifeCoordinator], ClimateEntit
 
     async def async_turn_on(self) -> None:
         """Turn the AC on."""
+        _LOGGER.debug("[%s] async_turn_on()", self._puid)
         overrides: dict[str, Any] = {"t_power": 1}
         self._set_optimistic(overrides)
         self.async_write_ha_state()
@@ -939,6 +977,7 @@ class ConnectLifeClimate(CoordinatorEntity[ConnectLifeCoordinator], ClimateEntit
 
     async def async_turn_off(self) -> None:
         """Turn the AC off."""
+        _LOGGER.debug("[%s] async_turn_off()", self._puid)
         await self.async_set_hvac_mode(HVACMode.OFF)
 
     # ------------------------------------------------------------------
@@ -954,6 +993,11 @@ class ConnectLifeClimate(CoordinatorEntity[ConnectLifeCoordinator], ClimateEntit
             if e is not None
         ]
         if entities_to_track:
+            _LOGGER.debug(
+                "[%s] Tracking external sensor entities: %s",
+                self._puid,
+                entities_to_track,
+            )
             self.async_on_remove(
                 async_track_state_change_event(
                     self.hass,
@@ -962,6 +1006,11 @@ class ConnectLifeClimate(CoordinatorEntity[ConnectLifeCoordinator], ClimateEntit
                 )
             )
         if self._matter_climate_entity:
+            _LOGGER.debug(
+                "[%s] Tracking linked Matter entity: %s",
+                self._puid,
+                self._matter_climate_entity,
+            )
             self.async_on_remove(
                 async_track_state_change_event(
                     self.hass,
@@ -971,13 +1020,28 @@ class ConnectLifeClimate(CoordinatorEntity[ConnectLifeCoordinator], ClimateEntit
             )
 
     @callback
-    def _async_sensor_event(self, _event: Any) -> None:
+    def _async_sensor_event(self, event: Any) -> None:
         """Handle a state change on a tracked sensor entity."""
+        new_state = event.data.get("new_state")
+        _LOGGER.debug(
+            "[%s] External sensor %s changed to %s",
+            self._puid,
+            event.data.get("entity_id"),
+            new_state.state if new_state else None,
+        )
         self.hass.async_create_task(self._async_control())
 
     @callback
-    def _async_matter_event(self, _event: Any) -> None:
+    def _async_matter_event(self, event: Any) -> None:
         """Push state immediately when the linked Matter entity updates."""
+        new_state = event.data.get("new_state")
+        _LOGGER.debug(
+            "[%s] Matter entity %s changed: state=%s attributes=%s",
+            self._puid,
+            event.data.get("entity_id"),
+            new_state.state if new_state else None,
+            dict(new_state.attributes) if new_state else None,
+        )
         # Drop any locally-optimistic target temp so a change made directly
         # on the Matter side (not through this entity) isn't shadowed by a
         # stale guess until ConnectLife's next poll clears it.
@@ -996,6 +1060,13 @@ class ConnectLifeClimate(CoordinatorEntity[ConnectLifeCoordinator], ClimateEntit
                     api_temp = _THERMOSTAT_COOL_F if is_f else _THERMOSTAT_COOL_C
                 else:
                     api_temp = _THERMOSTAT_IDLE_F if is_f else _THERMOSTAT_IDLE_C
+                _LOGGER.debug(
+                    "[%s] Thermostat: sensor=%.1f target=%.1f -> forcing t_temp=%s",
+                    self._puid,
+                    current_temp,
+                    self._target_room_temp,
+                    api_temp,
+                )
                 await self.coordinator.api.update_device(
                     self._puid, {"t_temp": api_temp}
                 )

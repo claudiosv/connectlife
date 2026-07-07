@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from typing import Any
 
@@ -15,6 +16,8 @@ from .climate import _build_full_properties
 from .const import DOMAIN
 from .coordinator import ConnectLifeCoordinator
 from .sensor import _device_info
+
+_LOGGER = logging.getLogger(__name__)
 
 
 @dataclass
@@ -80,6 +83,12 @@ class ConnectLifeToggleSwitch(CoordinatorEntity[ConnectLifeCoordinator], SwitchE
 
     @callback
     def _handle_coordinator_update(self) -> None:
+        if self._optimistic_is_on is not None:
+            _LOGGER.debug(
+                "[%s] %s: coordinator update, clearing optimistic state",
+                self._puid,
+                self._key,
+            )
         self._optimistic_is_on = None
         super()._handle_coordinator_update()
 
@@ -99,10 +108,12 @@ class ConnectLifeToggleSwitch(CoordinatorEntity[ConnectLifeCoordinator], SwitchE
         await self._async_set(False)
 
     async def _async_set(self, value: bool) -> None:
+        _LOGGER.debug("[%s] %s: async_turn_%s()", self._puid, self._key, "on" if value else "off")
         self._optimistic_is_on = value
         self.async_write_ha_state()
         # Send the full current property set, not just this one key —
         # ConnectLife's API can silently drop a bare single-property update.
         props = _build_full_properties(self._status(), {self._key: 1 if value else 0})
+        _LOGGER.debug("[%s] Sending update to ConnectLife: %s", self._puid, props)
         await self.coordinator.api.update_device(self._puid, props)
         await self.coordinator.async_request_refresh()

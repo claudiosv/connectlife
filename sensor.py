@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -26,6 +27,8 @@ from .const import (
     TEMP_CODE_FAHRENHEIT,
 )
 from .coordinator import ConnectLifeCoordinator
+
+_LOGGER = logging.getLogger(__name__)
 
 
 async def async_setup_entry(
@@ -75,6 +78,12 @@ async def async_setup_entry(
                 )
             )
 
+    _LOGGER.debug(
+        "Setting up %d sensor entities for %d device(s) (matter_climate_entity=%r)",
+        len(entities),
+        len(coordinator.data),
+        matter_climate_entity,
+    )
     async_add_entities(entities)
 
 
@@ -341,7 +350,15 @@ class _ConnectLifeMatterMirrorSensor(_ConnectLifeBaseSensor):
         )
 
     @callback
-    def _async_matter_event(self, _event: Any) -> None:
+    def _async_matter_event(self, event: Any) -> None:
+        new_state = event.data.get("new_state")
+        _LOGGER.debug(
+            "[%s] %s: Matter entity %s changed to %s",
+            self._puid,
+            self.entity_id,
+            self._matter_entity_id,
+            new_state.state if new_state else None,
+        )
         self.async_write_ha_state()
 
     def _matter_state(self) -> State | None:

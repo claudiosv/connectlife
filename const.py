@@ -17,6 +17,7 @@ CONF_HUMIDITY_PRECISION = "humidity_precision"
 CONF_POLL_INTERVAL = "poll_interval"
 CONF_COMMAND_REFRESH_DELAY = "command_refresh_delay"
 CONF_DEBOUNCE_DELAY = "debounce_delay"
+CONF_DEBUG_LOGGING = "debug_logging"
 
 TEMP_UNIT_CELSIUS = "celsius"
 TEMP_UNIT_FAHRENHEIT = "fahrenheit"

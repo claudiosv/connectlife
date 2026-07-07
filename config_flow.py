@@ -33,6 +33,7 @@ from .const import (
     CONF_CURRENT_HUMIDITY_ENTITY,
     CONF_CURRENT_TEMP_ENTITY,
     CONF_DEBOUNCE_DELAY,
+    CONF_DEBUG_LOGGING,
     CONF_DEVICES_CONFIG,
     CONF_EXTERNAL_TEMP_ENABLED,
     CONF_HUMIDITY_PRECISION,
@@ -223,6 +224,10 @@ def _options_schema(current: dict[str, Any]) -> vol.Schema:
             CONF_DEVICES_CONFIG,
             default=current.get(CONF_DEVICES_CONFIG, _DEFAULT_DEVICES_CONFIG),
         ): str,
+        vol.Optional(
+            CONF_DEBUG_LOGGING,
+            default=current.get(CONF_DEBUG_LOGGING, False),
+        ): bool,
     })
 
 
@@ -376,6 +381,9 @@ class ConnectLifeOptionsFlow(OptionsFlow):
                                 CONF_DEBOUNCE_DELAY, DEBOUNCE_DELAY_SECONDS
                             ),
                             CONF_DEVICES_CONFIG: user_input[CONF_DEVICES_CONFIG],
+                            CONF_DEBUG_LOGGING: user_input.get(
+                                CONF_DEBUG_LOGGING, False
+                            ),
                         },
                     )
 

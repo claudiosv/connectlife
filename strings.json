@@ -19,7 +19,8 @@
           "poll_interval": "Cloud poll interval (seconds)",
           "command_refresh_delay": "Delay after sending a command before re-polling the cloud (seconds)",
           "debounce_delay": "Delay before sending batched rapid commands (seconds)",
-          "devices_config": "Device configuration (JSON)"
+          "devices_config": "Device configuration (JSON)",
+          "debug_logging": "Enable verbose debug logging"
         }
       }
     },

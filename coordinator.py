@@ -39,9 +39,11 @@ class ConnectLifeCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
 
     async def _async_update_data(self) -> dict[str, dict[str, Any]]:
         """Fetch devices from the API and return a puid-keyed dict."""
+        _LOGGER.debug("Polling ConnectLife for device state")
         try:
             devices = await self.api.get_online_ac_devices()
         except ConnectLifeAuthError as exc:
+            _LOGGER.debug("Poll failed with an authentication error: %s", exc)
             raise UpdateFailed(f"Authentication error: {exc}") from exc
         except ConnectLifeRateLimitError as exc:
             # Return stale data so entities stay available instead of going unknown
@@ -51,12 +53,15 @@ class ConnectLifeCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                     exc,
                 )
                 return self.data
+            _LOGGER.debug("Poll failed: rate limited with no cached data: %s", exc)
             raise UpdateFailed(
                 f"Rate limited and no cached data available: {exc}"
             ) from exc
         except ConnectLifeApiError as exc:
+            _LOGGER.debug("Poll failed with an API error: %s", exc)
             raise UpdateFailed(f"API error: {exc}") from exc
         except Exception as exc:
+            _LOGGER.debug("Poll failed with an unexpected error: %s", exc)
             raise UpdateFailed(f"Unexpected error: {exc}") from exc
 
         for device in devices:
@@ -66,4 +71,9 @@ class ConnectLifeCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                 device.get("statusList"),
             )
 
+        _LOGGER.debug(
+            "Poll complete: %d device(s): %s",
+            len(devices),
+            [d.get("puid") for d in devices],
+        )
         return {device["puid"]: device for device in devices}

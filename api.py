@@ -49,6 +49,28 @@ _LOGGER = logging.getLogger(__name__)
 _USER_AGENT = "Runner/2.0.6 (iPhone; iOS 17.2.1; Scale/3.00)"
 _RETRYABLE_STATUS = {429, 500, 502, 503, 504}
 
+_SENSITIVE_KEYS = {
+    "password",
+    "accessToken",
+    "access_token",
+    "sign",
+    "appSecret",
+    "client_secret",
+    "idToken",
+    "id_token",
+    "login_token",
+    "refresh_token",
+    "code",
+    "cookieValue",
+}
+
+
+def _redact(data: dict[str, Any] | None) -> dict[str, Any] | None:
+    """Mask sensitive top-level values before writing a payload to the log."""
+    if data is None:
+        return None
+    return {k: ("***" if k in _SENSITIVE_KEYS else v) for k, v in data.items()}
+
 
 class ConnectLifeAuthError(Exception):
     """Raised when authentication fails."""
@@ -156,6 +178,14 @@ class ConnectLifeApi:
     ) -> Any:
         """Make an HTTP request with tenacity-managed retries and backoff."""
         headers = {"User-Agent": _USER_AGENT}
+        _LOGGER.debug(
+            "-> %s %s params=%s json=%s form=%s",
+            method,
+            url,
+            _redact(params),
+            _redact(json_body),
+            _redact(form),
+        )
 
         try:
             async for attempt in AsyncRetrying(
@@ -181,6 +211,15 @@ class ConnectLifeApi:
                             )
                         resp.raise_for_status()
                         response_json = await resp.json(content_type=None)
+                        _LOGGER.debug(
+                            "<- %s %s status=%s response=%s",
+                            method,
+                            url,
+                            resp.status,
+                            _redact(response_json)
+                            if isinstance(response_json, dict)
+                            else response_json,
+                        )
 
                         if self._hass is not None:
                             log_dir = Path(self._hass.config.path("connectlife_logs"))
@@ -214,14 +253,17 @@ class ConnectLifeApi:
 
                         return response_json
         except _RetryableError as exc:
+            _LOGGER.debug("<- %s %s exhausted retries: %s", method, url, exc)
             raise ConnectLifeRateLimitError(
                 f"Request to {url} failed after {RETRY_ATTEMPTS} attempts: {exc}"
             ) from exc
         except aiohttp.ClientResponseError as exc:
+            _LOGGER.debug("<- %s %s HTTP error %s: %s", method, url, exc.status, exc.message)
             raise ConnectLifeApiError(
                 f"HTTP error {exc.status}: {exc.message}"
             ) from exc
         except aiohttp.ClientError as exc:
+            _LOGGER.debug("<- %s %s network error: %s", method, url, exc)
             raise ConnectLifeApiError(f"Network error: {exc}") from exc
 
     # ------------------------------------------------------------------
@@ -516,6 +558,11 @@ class ConnectLifeApi:
                 )
                 continue
             result.append(device)
+        _LOGGER.debug(
+            "get_online_ac_devices: %d of %d device(s) online and supported",
+            len(result),
+            len(all_devices),
+        )
         return result
 
     async def get_device_energy(self, device_id: str) -> dict[str, Any]:
@@ -560,6 +607,8 @@ class ConnectLifeApi:
             self._access_token = None
             self._token_expires_at = 0.0
             await self._ensure_token()
+            _LOGGER.debug("Credential validation succeeded for %s", self._username)
             return True
         except ConnectLifeAuthError:
+            _LOGGER.debug("Credential validation failed for %s", self._username)
             return False

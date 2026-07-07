@@ -131,6 +131,12 @@ class ConnectLifeFan(CoordinatorEntity[ConnectLifeCoordinator], FanEntity):
         preset_mode: str | None = None,
         **kwargs: Any,
     ) -> None:
+        _LOGGER.debug(
+            "[%s] async_turn_on(percentage=%r, preset_mode=%r)",
+            self._puid,
+            percentage,
+            preset_mode,
+        )
         overrides: dict[str, Any] = {"t_power": 1}
         if preset_mode is not None:
             fan_val = self._fan_options.get(preset_mode)
@@ -144,9 +150,11 @@ class ConnectLifeFan(CoordinatorEntity[ConnectLifeCoordinator], FanEntity):
         await self._async_update(overrides)
 
     async def async_turn_off(self, **kwargs: Any) -> None:
+        _LOGGER.debug("[%s] async_turn_off()", self._puid)
         await self._async_update({"t_power": 0})
 
     async def async_set_percentage(self, percentage: int) -> None:
+        _LOGGER.debug("[%s] async_set_percentage(%r)", self._puid, percentage)
         if percentage == 0:
             await self.async_turn_off()
             return
@@ -158,6 +166,7 @@ class ConnectLifeFan(CoordinatorEntity[ConnectLifeCoordinator], FanEntity):
         await self._async_update({"t_power": 1, "t_fan_speed": int(fan_val)})
 
     async def async_set_preset_mode(self, preset_mode: str) -> None:
+        _LOGGER.debug("[%s] async_set_preset_mode(%r)", self._puid, preset_mode)
         fan_val = self._fan_options.get(preset_mode)
         if fan_val is None:
             _LOGGER.warning("Unknown fan preset mode: %s", preset_mode)
@@ -168,5 +177,6 @@ class ConnectLifeFan(CoordinatorEntity[ConnectLifeCoordinator], FanEntity):
         # Send the full current property set, not just the changed keys —
         # ConnectLife's API can silently drop a bare partial update.
         props = _build_full_properties(self._status(), overrides)
+        _LOGGER.debug("[%s] Sending update to ConnectLife: %s", self._puid, props)
         await self.coordinator.api.update_device(self._puid, props)
         await self.coordinator.async_request_refresh()

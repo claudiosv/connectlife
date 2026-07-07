@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import (
     CONF_PASSWORD,
@@ -15,12 +17,15 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .api import ConnectLifeApi
 from .const import (
+    CONF_DEBUG_LOGGING,
     CONF_POLL_INTERVAL,
     DOMAIN,
     MATTER_DRY_FAN_DEVICES,
     UPDATE_INTERVAL_SECONDS,
 )
 from .coordinator import ConnectLifeCoordinator
+
+_LOGGER = logging.getLogger(__name__)
 
 PLATFORMS = [
     Platform.BUTTON,
@@ -29,6 +34,22 @@ PLATFORMS = [
     Platform.SENSOR,
     Platform.SWITCH,
 ]
+
+
+def _apply_debug_logging(cfg: dict) -> None:
+    """Enable or reset verbose debug logging for every module in this package.
+
+    Submodule loggers (climate.py, api.py, etc.) all use
+    logging.getLogger(__name__), which makes them children of this package's
+    own logger — setting the level here is enough for it to apply to all of
+    them, since a child with no explicit level inherits its parent's.
+    """
+    package_logger = logging.getLogger(__package__)
+    if cfg.get(CONF_DEBUG_LOGGING, False):
+        package_logger.setLevel(logging.DEBUG)
+        _LOGGER.debug("Debug logging enabled for %s", __package__)
+    else:
+        package_logger.setLevel(logging.NOTSET)
 
 
 def entry_config(entry: ConfigEntry) -> dict:
@@ -47,6 +68,7 @@ def _matter_devices(coordinator: ConnectLifeCoordinator) -> set[tuple[int, int]]
         product_id = status.get("f_matterOriginalProductId")
         if vendor_id and product_id:
             devices.add((int(vendor_id), int(product_id)))
+    _LOGGER.debug("Discovered %d Matter-provisioned ConnectLife device(s): %s", len(devices), devices)
     return devices
 
 
@@ -61,9 +83,11 @@ async def _async_patch_matter_dry_fan_support(
     """
     from homeassistant.components.matter import climate as matter_climate
 
+    _LOGGER.debug("Patching Matter DRY/FAN_ONLY allowlists with devices=%s", devices)
     matter_climate.SUPPORT_DRY_MODE_DEVICES.update(devices)
     matter_climate.SUPPORT_FAN_MODE_DEVICES.update(devices)
 
+    patched = 0
     for platform in entity_platform.async_get_platforms(hass, "matter"):
         if platform.domain != "climate":
             continue
@@ -74,11 +98,15 @@ async def _async_patch_matter_dry_fan_support(
             entity._calculate_features()  # type: ignore[attr-defined]
             entity._update_hvac_mode_and_action()  # type: ignore[attr-defined]
             entity.async_write_ha_state()
+            patched += 1
+    _LOGGER.debug("Recalculated features for %d Matter climate entities", patched)
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up ConnectLife from a config entry."""
     cfg = entry_config(entry)
+    _apply_debug_logging(cfg)
+    _LOGGER.debug("Setting up ConnectLife entry %s (title=%r)", entry.entry_id, entry.title)
     session = async_get_clientsession(hass)
     api = ConnectLifeApi(
         session=session,
@@ -107,6 +135,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         async def _patch(_event: Event) -> None:
             nonlocal patch_fired
             patch_fired = True
+            _LOGGER.debug("homeassistant_started fired, applying Matter allowlist patch")
             await _async_patch_matter_dry_fan_support(hass, matter_devices)
 
         remove_listener = hass.bus.async_listen_once(
@@ -126,11 +155,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 async def _async_reload_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Reload the entry when options change."""
+    _LOGGER.debug("Options updated for entry %s, reloading", entry.entry_id)
     await hass.config_entries.async_reload(entry.entry_id)
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a ConnectLife config entry."""
+    _LOGGER.debug("Unloading ConnectLife entry %s", entry.entry_id)
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if unload_ok:
         hass.data[DOMAIN].pop(entry.entry_id)
