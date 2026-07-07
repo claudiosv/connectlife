@@ -1,0 +1,9 @@
+{
+  "domain": "matter_mode_patch",
+  "name": "Matter Mode Patch",
+  "version": "1.0.0",
+  "documentation": "https://github.com/home-assistant/core/blob/dev/homeassistant/components/matter/climate.py",
+  "dependencies": [],
+  "codeowners": [],
+  "iot_class": "calculated"
+}

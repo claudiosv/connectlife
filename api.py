@@ -428,7 +428,7 @@ class ConnectLifeApi:
     # ------------------------------------------------------------------
 
     def _sign(self, data: dict[str, Any]) -> str:
-        sorted_items = sorted(data.items())
+        sorted_items = sorted(k for k in data if k != "sign") #data.items())
         parts = []
         for k, v in sorted_items:
             if isinstance(v, (dict, list)):

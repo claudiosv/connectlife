@@ -31,9 +31,11 @@ from .const import (
     CONF_COMMAND_REFRESH_DELAY,
     CONF_CURRENT_HUMIDITY_ENTITY,
     CONF_CURRENT_TEMP_ENTITY,
+    CONF_DEBOUNCE_DELAY,
     CONF_DEVICES_CONFIG,
     CONF_EXTERNAL_TEMP_ENABLED,
     CONF_TARGET_HUMIDITY,
+    DEBOUNCE_DELAY_SECONDS,
     DEFAULT_DEVICES_CONFIG,
     DOMAIN,
     TEMP_CODE_CELSIUS,
@@ -91,6 +93,7 @@ async def async_setup_entry(
     command_refresh_delay = int(
         cfg.get(CONF_COMMAND_REFRESH_DELAY, COMMAND_REFRESH_DELAY_SECONDS)
     )
+    debounce_delay = float(cfg.get(CONF_DEBOUNCE_DELAY, DEBOUNCE_DELAY_SECONDS))
 
     entities = [
         ConnectLifeClimate(
@@ -104,6 +107,7 @@ async def async_setup_entry(
             current_humidity_entity,
             target_humidity,
             command_refresh_delay,
+            debounce_delay,
         )
         for puid, device in coordinator.data.items()
     ]
@@ -207,6 +211,7 @@ class ConnectLifeClimate(CoordinatorEntity[ConnectLifeCoordinator], ClimateEntit
         current_humidity_entity: str | None = None,
         target_humidity: float | None = None,
         command_refresh_delay: int = COMMAND_REFRESH_DELAY_SECONDS,
+        debounce_delay: float = DEBOUNCE_DELAY_SECONDS,
     ) -> None:
         super().__init__(coordinator)
         self._puid = puid
@@ -214,6 +219,7 @@ class ConnectLifeClimate(CoordinatorEntity[ConnectLifeCoordinator], ClimateEntit
         self._current_temp_entity = current_temp_entity
         self._external_temp_enabled = external_temp_enabled
         self._command_refresh_delay = command_refresh_delay
+        self._debounce_delay = debounce_delay
         self._current_humidity_entity = current_humidity_entity
         self._target_humidity = (
             float(target_humidity) if target_humidity is not None else None
@@ -225,6 +231,8 @@ class ConnectLifeClimate(CoordinatorEntity[ConnectLifeCoordinator], ClimateEntit
             float(raw_temp) if raw_temp is not None else None
         )
         self._optimistic_status: dict[str, Any] = {}
+        self._pending_overrides: dict[str, Any] = {}
+        self._debounce_task: asyncio.Task | None = None
 
         feature_code = device.get("deviceFeatureCode", "")
         self._device_config = _get_device_config(devices_config, feature_code)
@@ -461,6 +469,30 @@ class ConnectLifeClimate(CoordinatorEntity[ConnectLifeCoordinator], ClimateEntit
 
         self.hass.async_create_task(_refresh())
 
+    def _enqueue(self, overrides: dict[str, Any]) -> None:
+        """Accumulate overrides and (re)start the debounce timer.
+
+        Multiple rapid calls merge into a single API request sent after
+        _DEBOUNCE_DELAY seconds of inactivity.
+        """
+        self._pending_overrides.update(overrides)
+        if self._debounce_task and not self._debounce_task.done():
+            self._debounce_task.cancel()
+        self._debounce_task = self.hass.async_create_task(self._flush_pending())
+
+    async def _flush_pending(self) -> None:
+        """Send all accumulated overrides in one API call after the debounce window."""
+        await asyncio.sleep(self._debounce_delay)
+        overrides = dict(self._pending_overrides)
+        self._pending_overrides.clear()
+        props = self._build_properties(overrides)
+        await self.coordinator.api.update_device(self._puid, props)
+        self._schedule_refresh()
+
+    async def async_will_remove_from_hass(self) -> None:
+        if self._debounce_task and not self._debounce_task.done():
+            self._debounce_task.cancel()
+
     def _build_properties(
         self, overrides: dict[str, Any] | None = None
     ) -> dict[str, Any]:
@@ -522,11 +554,9 @@ class ConnectLifeClimate(CoordinatorEntity[ConnectLifeCoordinator], ClimateEntit
             elif hvac_mode == HVACMode.DRY:
                 overrides["t_super"] = 0
 
-        props = self._build_properties(overrides)
         self._optimistic_status.update(overrides)
         self.async_write_ha_state()
-        await self.coordinator.api.update_device(self._puid, props)
-        self._schedule_refresh()
+        self._enqueue(overrides)
 
     async def async_set_temperature(self, **kwargs: Any) -> None:
         """Set target temperature."""
@@ -546,11 +576,9 @@ class ConnectLifeClimate(CoordinatorEntity[ConnectLifeCoordinator], ClimateEntit
             await self._async_control()
         else:
             overrides = {"t_temp": int(temp)}
-            props = self._build_properties(overrides)
             self._optimistic_status.update(overrides)
             self.async_write_ha_state()
-            await self.coordinator.api.update_device(self._puid, props)
-            self._schedule_refresh()
+            self._enqueue(overrides)
 
     async def async_set_humidity(self, humidity: float) -> None:
         """Set target humidity for dry-mode control."""
@@ -587,11 +615,9 @@ class ConnectLifeClimate(CoordinatorEntity[ConnectLifeCoordinator], ClimateEntit
         if auto_val is not None and fan_val != auto_val:
             if int(self._status().get("t_sleep", 0)) == 1:
                 overrides["t_sleep"] = 0
-        props = self._build_properties(overrides)
         self._optimistic_status.update(overrides)
         self.async_write_ha_state()
-        await self.coordinator.api.update_device(self._puid, props)
-        self._schedule_refresh()
+        self._enqueue(overrides)
 
     async def async_set_swing_mode(self, swing_mode: str) -> None:
         """Set swing mode."""
@@ -606,11 +632,9 @@ class ConnectLifeClimate(CoordinatorEntity[ConnectLifeCoordinator], ClimateEntit
             }
         else:  # up_down
             overrides = {"t_up_down": int(swing_vals["t_up_down"])}
-        props = self._build_properties(overrides)
         self._optimistic_status.update(overrides)
         self.async_write_ha_state()
-        await self.coordinator.api.update_device(self._puid, props)
-        self._schedule_refresh()
+        self._enqueue(overrides)
 
     async def async_set_preset_mode(self, preset_mode: str) -> None:
         """Set preset mode."""
@@ -638,29 +662,23 @@ class ConnectLifeClimate(CoordinatorEntity[ConnectLifeCoordinator], ClimateEntit
                 overrides["t_fan_speed"] = int(auto_val)
         elif preset_mode == PRESET_BOOST:
             overrides["t_super"] = 1
-        props = self._build_properties(overrides)
         self._optimistic_status.update(overrides)
         self.async_write_ha_state()
-        await self.coordinator.api.update_device(self._puid, props)
-        self._schedule_refresh()
+        self._enqueue(overrides)
 
     async def async_turn_on(self) -> None:
         """Turn the AC on."""
         overrides: dict[str, Any] = {"t_power": 1}
-        props = self._build_properties(overrides)
         self._optimistic_status.update(overrides)
         self.async_write_ha_state()
-        await self.coordinator.api.update_device(self._puid, props)
-        self._schedule_refresh()
+        self._enqueue(overrides)
 
     async def async_turn_off(self) -> None:
         """Turn the AC off."""
         overrides: dict[str, Any] = {"t_power": 0}
-        props = self._build_properties(overrides)
         self._optimistic_status.update(overrides)
         self.async_write_ha_state()
-        await self.coordinator.api.update_device(self._puid, props)
-        self._schedule_refresh()
+        self._enqueue(overrides)
 
     # ------------------------------------------------------------------
     # External sensor tracking

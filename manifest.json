@@ -1,14 +1,13 @@
 {
-    "domain": "connectlife",
-    "name": "ConnectLife",
+    "domain": "connectlife_claudio",
+    "name": "ConnectLife Claudio",
     "version": "1.0.0",
     "config_flow": true,
     "documentation": "https://github.com/bkbilly/connectlife-api-connector",
     "issue_tracker": "https://github.com/bkbilly/connectlife-api-connector/issues",
     "requirements": [
         "cryptography>=42.0.0",
-        "tenacity>=8.2.0",
-        "pydantic>=2.0.0"
+        "tenacity>=8.2.0"
     ],
     "dependencies": [],
     "codeowners": [],

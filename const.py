@@ -1,6 +1,6 @@
 """Constants for the ConnectLife integration."""
 
-DOMAIN = "connectlife"
+DOMAIN = "connectlife_claudio"
 
 CONF_BEEPING = "beeping"
 CONF_DEVICES_CONFIG = "devices_config"
@@ -12,12 +12,14 @@ CONF_CURRENT_HUMIDITY_ENTITY = "current_humidity_entity"
 CONF_TARGET_HUMIDITY = "target_humidity"
 CONF_POLL_INTERVAL = "poll_interval"
 CONF_COMMAND_REFRESH_DELAY = "command_refresh_delay"
+CONF_DEBOUNCE_DELAY = "debounce_delay"
 
 TEMP_UNIT_CELSIUS = "celsius"
 TEMP_UNIT_FAHRENHEIT = "fahrenheit"
 
 UPDATE_INTERVAL_SECONDS = 60
 COMMAND_REFRESH_DELAY_SECONDS = 5  # seconds after a command before re-polling the cloud
+DEBOUNCE_DELAY_SECONDS = 3  # seconds of inactivity before batched commands are sent
 TOKEN_CACHE_SECONDS = 86400  # 24 hours
 ENERGY_CACHE_SECONDS = 600  # 10 minutes
 
@@ -52,11 +54,12 @@ JPKYHlwaO7qgoIjLxAHlSOXGpucJcOkPzT2EqsSVnW8sn8kenvNmghXDayhgxsh6
 AyxK4kehJplEnmX/iYCfNoFXknGcLqFWYccgBz3fybvx30C/0IgU1980L8QsUAv5
 esZmN8ugnbRgLRxKRlkQQLxQAiZMZdKTAx665YflT3YMHJvEFE8c2XFgoxHzSMc4
 BwIDAQAB
------END PUBLIC KEY-----"""
+-----END PUBLIC KEY-----
+"""
 
 # Temperature unit codes (from ConnectLife API PHP enum: celsius='0', fahrenheit='1')
-TEMP_CODE_CELSIUS = "0"
-TEMP_CODE_FAHRENHEIT = "1"
+TEMP_CODE_CELSIUS = 0
+TEMP_CODE_FAHRENHEIT = 1
 
 # t_work_mode values
 WORK_MODE_FAN_ONLY = "0"

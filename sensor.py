@@ -73,7 +73,7 @@ def _device_info(device: dict[str, Any], puid: str, domain: str) -> DeviceInfo:
 
 
 def _temp_unit(status: dict[str, Any]) -> str:
-    temp_type = str(status.get("t_temp_type", "0"))
+    temp_type = status.get("t_temp_type", 0)
     return (
         UnitOfTemperature.FAHRENHEIT
         if temp_type == TEMP_CODE_FAHRENHEIT

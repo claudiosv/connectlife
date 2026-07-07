@@ -32,12 +32,14 @@ from .const import (
     CONF_COMMAND_REFRESH_DELAY,
     CONF_CURRENT_HUMIDITY_ENTITY,
     CONF_CURRENT_TEMP_ENTITY,
+    CONF_DEBOUNCE_DELAY,
     CONF_DEVICES_CONFIG,
     CONF_EXTERNAL_TEMP_ENABLED,
     CONF_POLL_INTERVAL,
     CONF_TARGET_HUMIDITY,
     CONF_TEMPERATURE_SENSORS,
     CONF_TEMPERATURE_UNIT,
+    DEBOUNCE_DELAY_SECONDS,
     DOMAIN,
     TEMP_UNIT_CELSIUS,
     TEMP_UNIT_FAHRENHEIT,
@@ -56,7 +58,7 @@ _DEFAULT_DEVICES_CONFIG = json.dumps({
             "3": "medium",
             "4": "high",
         },
-        "t_up_down": {"0": "SWING_OFF", "1": "SWING_ON"},
+        "t_up_down": {"0": "off", "1": "on"},
     },
     "201": {
         "t_work_mode": ["fan only", "cool", "dry", "auto"],
@@ -165,6 +167,18 @@ def _options_schema(current: dict[str, Any]) -> vol.Schema:
             NumberSelectorConfig(
                 min=1,
                 max=60,
+                step=1,
+                mode=NumberSelectorMode.BOX,
+                unit_of_measurement="s",
+            )
+        ),
+        vol.Optional(
+            CONF_DEBOUNCE_DELAY,
+            default=current.get(CONF_DEBOUNCE_DELAY, DEBOUNCE_DELAY_SECONDS),
+        ): NumberSelector(
+            NumberSelectorConfig(
+                min=1,
+                max=30,
                 step=1,
                 mode=NumberSelectorMode.BOX,
                 unit_of_measurement="s",
@@ -310,6 +324,9 @@ class ConnectLifeOptionsFlow(OptionsFlow):
                             CONF_COMMAND_REFRESH_DELAY: user_input.get(
                                 CONF_COMMAND_REFRESH_DELAY,
                                 COMMAND_REFRESH_DELAY_SECONDS,
+                            ),
+                            CONF_DEBOUNCE_DELAY: user_input.get(
+                                CONF_DEBOUNCE_DELAY, DEBOUNCE_DELAY_SECONDS
                             ),
                             CONF_DEVICES_CONFIG: user_input[CONF_DEVICES_CONFIG],
                         },
