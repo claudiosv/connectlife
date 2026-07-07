@@ -374,12 +374,14 @@ class ConnectLifeClimate(CoordinatorEntity[ConnectLifeCoordinator], ClimateEntit
                 if val is not None:
                     return val
             else:
+                val = self._matter_temperature("temperature")
                 _LOGGER.warning(
                     "[%s] target_temperature: hvac_mode=%s is not COOL, skipping "
-                    "Matter entity %s and using ConnectLife t_temp=%r instead",
+                    "Matter entity %s (temp=%.2f) and using ConnectLife t_temp=%r instead",
                     self._puid,
                     self.hvac_mode,
                     self._matter_climate_entity,
+                    val,
                     self._status().get("t_temp"),
                 )
         val = self._status().get("t_temp")
