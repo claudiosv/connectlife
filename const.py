@@ -68,6 +68,13 @@ WORK_MODE_COOL = "2"
 WORK_MODE_DRY = "3"
 WORK_MODE_AUTO = "4"
 
+# Matter (vendor_id, product_id) pairs known to support DRY/FAN_ONLY modes but missing
+# from Home Assistant's built-in Matter climate allowlist. Combined at runtime with
+# devices detected via f_matterOriginalVendorId/f_matterOriginalProductId.
+MATTER_DRY_FAN_DEVICES: set[tuple[int, int]] = {
+    (0x138C, 0x3601),
+}
+
 DEFAULT_DEVICES_CONFIG = {
     "t_work_mode": ["fan only", "heat", "cool", "dry", "auto"],
     "t_fan_speed": {
