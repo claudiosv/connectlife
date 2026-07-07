@@ -9,11 +9,16 @@
           "temperature_unit": "Temperature unit",
           "temperature_sensors": "Create separate temperature sensor entities",
           "current_temperature_entity": "External temperature sensor (overrides AC reading)",
+          "external_temp_enabled": "Use the external temperature sensor",
           "current_humidity_entity": "External humidity sensor (overrides AC reading)",
+          "target_humidity": "Target humidity for dry-mode control (%)",
           "matter_climate_entity": "Hisense Matter AC (used for current/target temperature and mode when available)",
           "matter_sync_timeout": "How long to trust our own state after a Matter command before falling back to ConnectLife's reported value",
           "temperature_precision": "Temperature display precision (decimal places, 0 or 1)",
           "humidity_precision": "Humidity display precision (decimal places)",
+          "poll_interval": "Cloud poll interval (seconds)",
+          "command_refresh_delay": "Delay after sending a command before re-polling the cloud (seconds)",
+          "debounce_delay": "Delay before sending batched rapid commands (seconds)",
           "devices_config": "Device configuration (JSON)"
         }
       }
