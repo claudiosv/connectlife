@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from dataclasses import dataclass
 from typing import Any
@@ -14,7 +15,12 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from . import entry_config
 from .climate import _build_full_properties
-from .const import CONF_BEEPING, DOMAIN
+from .const import (
+    COMMAND_REFRESH_DELAY_SECONDS,
+    CONF_BEEPING,
+    CONF_COMMAND_REFRESH_DELAY,
+    DOMAIN,
+)
 from .coordinator import ConnectLifeCoordinator
 from .sensor import _device_info
 
@@ -43,9 +49,15 @@ async def async_setup_entry(
 ) -> None:
     """Set up ConnectLife toggle switches for each device."""
     coordinator: ConnectLifeCoordinator = hass.data[DOMAIN][entry.entry_id]
-    beeping = entry_config(entry).get(CONF_BEEPING, False)
+    cfg = entry_config(entry)
+    beeping = cfg.get(CONF_BEEPING, False)
+    command_refresh_delay = int(
+        cfg.get(CONF_COMMAND_REFRESH_DELAY, COMMAND_REFRESH_DELAY_SECONDS)
+    )
     async_add_entities(
-        ConnectLifeToggleSwitch(coordinator, puid, device, td, beeping)
+        ConnectLifeToggleSwitch(
+            coordinator, puid, device, td, beeping, command_refresh_delay
+        )
         for puid, device in coordinator.data.items()
         for td in _TOGGLE_SWITCHES
     )
@@ -63,11 +75,13 @@ class ConnectLifeToggleSwitch(CoordinatorEntity[ConnectLifeCoordinator], SwitchE
         device: dict[str, Any],
         td: _ToggleDef,
         beeping: bool = False,
+        command_refresh_delay: int = COMMAND_REFRESH_DELAY_SECONDS,
     ) -> None:
         super().__init__(coordinator)
         self._puid = puid
         self._key = td.key
         self._beeping = beeping
+        self._command_refresh_delay = command_refresh_delay
         self._optimistic_is_on: bool | None = None
         self._attr_unique_id = f"{puid}_{td.key}"
         self._attr_name = td.name
@@ -124,4 +138,24 @@ class ConnectLifeToggleSwitch(CoordinatorEntity[ConnectLifeCoordinator], SwitchE
         )
         _LOGGER.debug("[%s] Sending update to ConnectLife: %s", self._puid, props)
         await self.coordinator.api.update_device(self._puid, props)
-        await self.coordinator.async_request_refresh()
+        self._schedule_refresh()
+
+    def _schedule_refresh(self) -> None:
+        """Schedule a coordinator refresh after a short delay, resetting the poll timer.
+
+        ConnectLife's cloud needs time to actually apply a command — polling
+        immediately just re-reads the pre-change state, same as climate.py's
+        _schedule_refresh.
+        """
+
+        async def _refresh() -> None:
+            await asyncio.sleep(self._command_refresh_delay)
+            _LOGGER.debug(
+                "[%s] %s: requesting coordinator refresh after %.1fs command delay",
+                self._puid,
+                self._key,
+                self._command_refresh_delay,
+            )
+            await self.coordinator.async_request_refresh()
+
+        self.hass.async_create_task(_refresh())

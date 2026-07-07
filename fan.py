@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from typing import Any
@@ -18,7 +19,13 @@ from homeassistant.util.percentage import (
 
 from . import entry_config
 from .climate import _build_fan_options, _build_full_properties, _get_device_config
-from .const import CONF_BEEPING, CONF_DEVICES_CONFIG, DOMAIN
+from .const import (
+    COMMAND_REFRESH_DELAY_SECONDS,
+    CONF_BEEPING,
+    CONF_COMMAND_REFRESH_DELAY,
+    CONF_DEVICES_CONFIG,
+    DOMAIN,
+)
 from .coordinator import ConnectLifeCoordinator
 from .sensor import _device_info
 
@@ -45,6 +52,9 @@ async def async_setup_entry(
         _LOGGER.warning("Invalid devices_config JSON, using defaults")
         devices_config = {}
     beeping = cfg.get(CONF_BEEPING, False)
+    command_refresh_delay = int(
+        cfg.get(CONF_COMMAND_REFRESH_DELAY, COMMAND_REFRESH_DELAY_SECONDS)
+    )
 
     entities = []
     for puid, device in coordinator.data.items():
@@ -53,7 +63,9 @@ async def async_setup_entry(
         fan_options = _build_fan_options(device_config)
         if fan_options:
             entities.append(
-                ConnectLifeFan(coordinator, puid, device, fan_options, beeping)
+                ConnectLifeFan(
+                    coordinator, puid, device, fan_options, beeping, command_refresh_delay
+                )
             )
     async_add_entities(entities)
 
@@ -76,11 +88,13 @@ class ConnectLifeFan(CoordinatorEntity[ConnectLifeCoordinator], FanEntity):
         device: dict[str, Any],
         fan_options: dict[str, str],
         beeping: bool = False,
+        command_refresh_delay: int = COMMAND_REFRESH_DELAY_SECONDS,
     ) -> None:
         super().__init__(coordinator)
         self._puid = puid
         self._fan_options = fan_options
         self._beeping = beeping
+        self._command_refresh_delay = command_refresh_delay
         self._attr_unique_id = f"{puid}_fan"
         self._attr_device_info = _device_info(device, puid, DOMAIN)
         # ConnectLife's cloud can take a long time (observed up to 60-90s) to
@@ -229,4 +243,23 @@ class ConnectLifeFan(CoordinatorEntity[ConnectLifeCoordinator], FanEntity):
         props = _build_full_properties(self._status(), overrides, beeping=self._beeping)
         _LOGGER.debug("[%s] Sending update to ConnectLife: %s", self._puid, props)
         await self.coordinator.api.update_device(self._puid, props)
-        await self.coordinator.async_request_refresh()
+        self._schedule_refresh()
+
+    def _schedule_refresh(self) -> None:
+        """Schedule a coordinator refresh after a short delay, resetting the poll timer.
+
+        ConnectLife's cloud needs time to actually apply a command — polling
+        immediately just re-reads the pre-change state, same as climate.py's
+        _schedule_refresh.
+        """
+
+        async def _refresh() -> None:
+            await asyncio.sleep(self._command_refresh_delay)
+            _LOGGER.debug(
+                "[%s] Requesting coordinator refresh after %.1fs command delay",
+                self._puid,
+                self._command_refresh_delay,
+            )
+            await self.coordinator.async_request_refresh()
+
+        self.hass.async_create_task(_refresh())
