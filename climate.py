@@ -18,7 +18,7 @@ from homeassistant.components.climate.const import (
     PRESET_NONE,
     PRESET_SLEEP,
 )
-from homeassistant.const import UnitOfTemperature
+from homeassistant.const import PRECISION_TENTHS, PRECISION_WHOLE, UnitOfTemperature
 from homeassistant.core import callback
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.event import async_track_state_change_event
@@ -35,8 +35,10 @@ from .const import (
     CONF_DEBOUNCE_DELAY,
     CONF_DEVICES_CONFIG,
     CONF_EXTERNAL_TEMP_ENABLED,
+    CONF_HUMIDITY_PRECISION,
     CONF_MATTER_CLIMATE_ENTITY,
     CONF_TARGET_HUMIDITY,
+    CONF_TEMPERATURE_PRECISION,
     DEBOUNCE_DELAY_SECONDS,
     DEFAULT_DEVICES_CONFIG,
     DOMAIN,
@@ -101,6 +103,8 @@ async def async_setup_entry(
     current_humidity_entity = cfg.get(CONF_CURRENT_HUMIDITY_ENTITY)
     target_humidity = cfg.get(CONF_TARGET_HUMIDITY)
     matter_climate_entity = cfg.get(CONF_MATTER_CLIMATE_ENTITY)
+    temperature_precision = cfg.get(CONF_TEMPERATURE_PRECISION)
+    humidity_precision = cfg.get(CONF_HUMIDITY_PRECISION)
     command_refresh_delay = int(
         cfg.get(CONF_COMMAND_REFRESH_DELAY, COMMAND_REFRESH_DELAY_SECONDS)
     )
@@ -120,6 +124,8 @@ async def async_setup_entry(
             command_refresh_delay,
             debounce_delay,
             matter_climate_entity,
+            temperature_precision,
+            humidity_precision,
         )
         for puid, device in coordinator.data.items()
     ]
@@ -225,6 +231,8 @@ class ConnectLifeClimate(CoordinatorEntity[ConnectLifeCoordinator], ClimateEntit
         command_refresh_delay: int = COMMAND_REFRESH_DELAY_SECONDS,
         debounce_delay: float = DEBOUNCE_DELAY_SECONDS,
         matter_climate_entity: str | None = None,
+        temperature_precision: int | None = None,
+        humidity_precision: int | None = None,
     ) -> None:
         super().__init__(coordinator)
         self._puid = puid
@@ -235,6 +243,8 @@ class ConnectLifeClimate(CoordinatorEntity[ConnectLifeCoordinator], ClimateEntit
         self._debounce_delay = debounce_delay
         self._current_humidity_entity = current_humidity_entity
         self._matter_climate_entity = matter_climate_entity
+        self._temperature_precision = temperature_precision
+        self._humidity_precision = humidity_precision
         self._target_humidity = (
             float(target_humidity) if target_humidity is not None else None
         )
@@ -363,12 +373,25 @@ class ConnectLifeClimate(CoordinatorEntity[ConnectLifeCoordinator], ClimateEntit
         return unit
 
     @property
+    def precision(self) -> float:
+        if self._temperature_precision is not None:
+            return (
+                PRECISION_WHOLE
+                if int(self._temperature_precision) <= 0
+                else PRECISION_TENTHS
+            )
+        # Same default Home Assistant's ClimateEntity uses when unset.
+        if self.hass.config.units.temperature_unit == UnitOfTemperature.CELSIUS:
+            return PRECISION_TENTHS
+        return PRECISION_WHOLE
+
+    def _round_humidity(self, val: float | None) -> float | None:
+        if val is None or self._humidity_precision is None:
+            return val
+        return round(val, int(self._humidity_precision))
+
+    @property
     def target_temperature(self) -> float | None:
-        _LOGGER.warning(
-            "[%s] target_temperature called; matter_climate_entity=%r",
-            self._puid,
-            self._matter_climate_entity,
-        )
         if (
             self._current_temp_entity
             and self._external_temp_enabled
@@ -378,32 +401,15 @@ class ConnectLifeClimate(CoordinatorEntity[ConnectLifeCoordinator], ClimateEntit
         if "t_temp" in self._optimistic_status:
             val = self._optimistic_status["t_temp"]
             return float(val) if val is not None else None
-        if self._matter_climate_entity:
-            if self.hvac_mode == HVACMode.COOL:
-                val = self._matter_temperature("temperature")
-                if val is not None:
-                    return val
-            else:
-                val = self._matter_temperature("temperature")
-                _LOGGER.warning(
-                    "[%s] target_temperature: hvac_mode=%s is not COOL, skipping "
-                    "Matter entity %s (temp=%r) and using ConnectLife t_temp=%r instead",
-                    self._puid,
-                    self.hvac_mode,
-                    self._matter_climate_entity,
-                    val,
-                    self._status().get("t_temp"),
-                )
+        if self._matter_climate_entity and self.hvac_mode == HVACMode.COOL:
+            val = self._matter_temperature("temperature")
+            if val is not None:
+                return val
         val = self._status().get("t_temp")
         return float(val) if val is not None else None
 
     @property
     def current_temperature(self) -> float | None:
-        _LOGGER.warning(
-            "[%s] current_temperature called; matter_climate_entity=%r",
-            self._puid,
-            self._matter_climate_entity,
-        )
         if self._current_temp_entity and self._external_temp_enabled:
             val = self._sensor_temperature(self._current_temp_entity)
             if val is not None:
@@ -426,31 +432,15 @@ class ConnectLifeClimate(CoordinatorEntity[ConnectLifeCoordinator], ClimateEntit
             return None
         state = self.hass.states.get(self._matter_climate_entity)
         if not state or state.state in ("unknown", "unavailable"):
-            _LOGGER.warning(
-                "[%s] _matter_temperature(%s): Matter entity %s state is %s",
-                self._puid,
-                attr,
-                self._matter_climate_entity,
-                state.state if state else "missing",
-            )
             return None
         val = state.attributes.get(attr)
         if val is None:
-            _LOGGER.warning(
-                "[%s] _matter_temperature(%s): Matter entity %s has no '%s' "
-                "attribute; full attributes=%r",
-                self._puid,
-                attr,
-                self._matter_climate_entity,
-                attr,
-                dict(state.attributes),
-            )
             return None
         try:
             ha_unit = self.hass.config.units.temperature_unit
             our_unit = self.temperature_unit
             converted = TemperatureConverter.convert(float(val), ha_unit, our_unit)
-            _LOGGER.warning(
+            _LOGGER.debug(
                 "[%s] _matter_temperature(%s): raw=%r from %s (system unit=%s) "
                 "-> converted=%r in %s (our unit)",
                 self._puid,
@@ -491,7 +481,7 @@ class ConnectLifeClimate(CoordinatorEntity[ConnectLifeCoordinator], ClimateEntit
             state = self.hass.states.get(self._current_humidity_entity)
             if state and state.state not in ("unknown", "unavailable"):
                 try:
-                    return float(state.state)
+                    return self._round_humidity(float(state.state))
                 except ValueError:
                     pass
         return None
@@ -510,7 +500,7 @@ class ConnectLifeClimate(CoordinatorEntity[ConnectLifeCoordinator], ClimateEntit
 
     @property
     def target_humidity(self) -> float | None:
-        return self._target_humidity
+        return self._round_humidity(self._target_humidity)
 
     @property
     def min_humidity(self) -> float:

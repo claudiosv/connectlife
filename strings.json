@@ -11,6 +11,8 @@
           "current_temperature_entity": "External temperature sensor (overrides AC reading)",
           "current_humidity_entity": "External humidity sensor (overrides AC reading)",
           "matter_climate_entity": "Hisense Matter AC (used for current/target temperature and mode when available)",
+          "temperature_precision": "Temperature display precision (decimal places, 0 or 1)",
+          "humidity_precision": "Humidity display precision (decimal places)",
           "devices_config": "Device configuration (JSON)"
         }
       }
