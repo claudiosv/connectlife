@@ -1,0 +1,38 @@
+climate.py
+  s_fac51dae4c7995::t_00130bb0005771 376-392
+  s_fac51dae4c7995::t_63ae8fa7c14355 21
+  s_fac51dae4c7995::t_8aeeb49eb81ddd 484
+  s_fac51dae4c7995::t_34eb9c8cd1f927 503
+  s_fac51dae4c7995::t_73155b2fd26902 443
+  s_fac51dae4c7995::t_38cd3d44ddc8bc 404-407
+  s_fac51dae4c7995::t_9b32e0418c5ecf 38,41
+  s_fac51dae4c7995::t_c8b8298473088e 106-107,127-128
+  s_fac51dae4c7995::t_ef3a2dcb4d5141 234-235,246-247
+  s_fac51dae4c7995::t_e17beb10f3e44a 375
+const.py
+  s_fac51dae4c7995::t_1c9ab313ee59cb 14-15
+translations/en.json
+  s_fac51dae4c7995::t_5a45469b529faa 15-16
+config_flow.py
+  s_fac51dae4c7995::t_752a7eead7e273 158-169
+  s_fac51dae4c7995::t_042636337544e3 345-350
+  s_fac51dae4c7995::t_ad0f12234cfb2f 38,42
+strings.json
+  s_fac51dae4c7995::t_b382159071badc 14-15
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "157a3eb4b160784f7e4b82958dc7f92e52d27d12",
+  "prompts": {},
+  "sessions": {
+    "s_fac51dae4c7995": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "aec3261c-c36e-4749-abb3-f3953121a284",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "Claudio Spiess <claudiosv@users.noreply.github.com>"
+    }
+  }
+}
