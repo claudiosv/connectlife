@@ -1,0 +1,68 @@
+switch.py
+  s_fac51dae4c7995::t_e7ec09330ec57e 5,20
+  s_fac51dae4c7995::t_bab5acc42a9370 86-91
+  s_fac51dae4c7995::t_49c9ddfc4a765c 111,117
+  s_fac51dae4c7995::t_ea06cc4e3b3222 21
+climate.py
+  s_fac51dae4c7995::t_1e996005ac5b82 923
+  s_fac51dae4c7995::t_3adebf74f13894 685-689
+  s_fac51dae4c7995::t_210e094d30fcaa 820,831-835,844-850,872
+  s_fac51dae4c7995::t_642850692ce05f 788-793,810-812
+  s_fac51dae4c7995::t_bbf6e23ed8fbdd 972,980
+  s_fac51dae4c7995::t_10153d33c99aa4 882,889
+  s_fac51dae4c7995::t_bd63bf2868bd4f 941
+  s_fac51dae4c7995::t_317685cdfb543f 769
+  s_fac51dae4c7995::t_af431bd21055dc 996-1000,1009-1013,1023,1025-1031,1035,1037-1044
+  s_fac51dae4c7995::t_e00878fe18c26b 1063-1069
+  s_fac51dae4c7995::t_f2565d3efdd02f 701,712-714
+sensor.py
+  s_fac51dae4c7995::t_a438967c3ce06c 353-361
+  s_fac51dae4c7995::t_0a1f18d38c3b83 5
+  s_fac51dae4c7995::t_35f3398e313651 31-32
+  s_fac51dae4c7995::t_961f7044748f50 81-86
+translations/en.json
+  s_fac51dae4c7995::t_5d492ba8dbccc6 22-23
+fan.py
+  s_fac51dae4c7995::t_b9072d25b40e32 134-139
+  s_fac51dae4c7995::t_c49c0eee01cd6d 153,157,169,180
+strings.json
+  s_fac51dae4c7995::t_174e009d47b135 22-23
+config_flow.py
+  s_fac51dae4c7995::t_f9e71388e8dd0a 384-386
+  s_fac51dae4c7995::t_48f4cdf0bae8db 36
+  s_fac51dae4c7995::t_339dd3badc9f39 227-230
+coordinator.py
+  s_fac51dae4c7995::t_ecfce01ce49067 42,46,56,61,64,74-78
+__init__.py
+  s_fac51dae4c7995::t_8d45f6f9ef1497 71
+  s_fac51dae4c7995::t_adaa7d067ae6b4 86,90,101-102
+  s_fac51dae4c7995::t_703b2246867353 138
+  s_fac51dae4c7995::t_7f75b56f10fc26 158,164
+  s_fac51dae4c7995::t_3e6d4449bbaace 5-6,20,28-29,39-52
+  s_fac51dae4c7995::t_8147d96ce06c18 108-109
+  s_fac51dae4c7995::t_cf5633137c1707 53-54
+const.py
+  s_fac51dae4c7995::t_b65cec5be0ebc7 20
+api.py
+  s_fac51dae4c7995::t_c94801c9f5e99e 561-565
+  s_fac51dae4c7995::t_59a974dd96d9b5 610,613
+  s_fac51dae4c7995::t_0b868ef0e9249f 256,261,266
+  s_fac51dae4c7995::t_8e711309534894 181-188,214-222
+  s_fac51dae4c7995::t_b4410d95f544a2 52-73
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "5f447b0a646dbe8cc5ae0884408ebad0267150e8",
+  "prompts": {},
+  "sessions": {
+    "s_fac51dae4c7995": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "aec3261c-c36e-4749-abb3-f3953121a284",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "Claudio Spiess <claudiosv@users.noreply.github.com>"
+    }
+  }
+}
