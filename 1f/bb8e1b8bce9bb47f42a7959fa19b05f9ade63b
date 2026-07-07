@@ -1,0 +1,23 @@
+sensor.py
+  s_fac51dae4c7995::t_a73fa260fa4d97 201
+  s_fac51dae4c7995::t_79cadfb2bcc0c8 95-100
+  s_fac51dae4c7995::t_8aeba0eb750dc3 174
+climate.py
+  s_fac51dae4c7995::t_8267a25dedeccb 344-349
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "1fbb8e1b8bce9bb47f42a7959fa19b05f9ade63b",
+  "prompts": {},
+  "sessions": {
+    "s_fac51dae4c7995": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "aec3261c-c36e-4749-abb3-f3953121a284",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "Claudio Spiess <claudiosv@users.noreply.github.com>"
+    }
+  }
+}
