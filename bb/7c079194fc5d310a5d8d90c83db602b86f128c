@@ -1,0 +1,14 @@
+sensor.py
+  h_aceaeb4e74d6dc 260-261
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "bb7c079194fc5d310a5d8d90c83db602b86f128c",
+  "prompts": {},
+  "humans": {
+    "h_aceaeb4e74d6dc": {
+      "author": "Claudio Spiess <claudiosv@users.noreply.github.com>"
+    }
+  }
+}
