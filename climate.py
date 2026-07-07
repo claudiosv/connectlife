@@ -14,15 +14,22 @@ from homeassistant.components.climate import (
     HVACMode,
 )
 from homeassistant.components.climate.const import (
+    ATTR_HUMIDITY,
     PRESET_BOOST,
     PRESET_ECO,
     PRESET_NONE,
     PRESET_SLEEP,
 )
-from homeassistant.const import PRECISION_TENTHS, PRECISION_WHOLE, UnitOfTemperature
+from homeassistant.const import (
+    ATTR_TEMPERATURE,
+    PRECISION_TENTHS,
+    PRECISION_WHOLE,
+    UnitOfTemperature,
+)
 from homeassistant.core import callback
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.event import async_track_state_change_event
+from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util.unit_conversion import TemperatureConverter
 
@@ -275,7 +282,9 @@ def _build_full_properties(
     return props
 
 
-class ConnectLifeClimate(CoordinatorEntity[ConnectLifeCoordinator], ClimateEntity):
+class ConnectLifeClimate(
+    CoordinatorEntity[ConnectLifeCoordinator], RestoreEntity, ClimateEntity
+):
     """Representation of a ConnectLife AC as a HA climate entity."""
 
     _attr_has_entity_name = True
@@ -1060,6 +1069,39 @@ class ConnectLifeClimate(CoordinatorEntity[ConnectLifeCoordinator], ClimateEntit
     async def async_added_to_hass(self) -> None:
         """Subscribe to external sensor state changes once added to HA."""
         await super().async_added_to_hass()
+
+        # Target humidity/room temp set live via the card (async_set_humidity/
+        # async_set_temperature) only ever lived in memory — restore the last
+        # value here so it survives a restart instead of reverting to the
+        # config-flow default every time.
+        last_state = await self.async_get_last_state()
+        if last_state is not None:
+            if self._current_humidity_entity:
+                restored_humidity = last_state.attributes.get(ATTR_HUMIDITY)
+                if restored_humidity is not None:
+                    try:
+                        self._target_humidity = float(restored_humidity)
+                        _LOGGER.debug(
+                            "[%s] Restored target humidity from last state: %.1f%%",
+                            self._puid,
+                            self._target_humidity,
+                        )
+                    except (TypeError, ValueError):
+                        pass
+            if self._current_temp_entity:
+                restored_temp = last_state.attributes.get(ATTR_TEMPERATURE)
+                if restored_temp is not None:
+                    try:
+                        self._target_room_temp = float(restored_temp)
+                        _LOGGER.debug(
+                            "[%s] Restored external-sensor target room temp "
+                            "from last state: %.1f",
+                            self._puid,
+                            self._target_room_temp,
+                        )
+                    except (TypeError, ValueError):
+                        pass
+
         entities_to_track = [
             e
             for e in (self._current_temp_entity, self._current_humidity_entity)
