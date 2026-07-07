@@ -250,15 +250,24 @@ def _build_full_properties(
     other current values alongside the change is what makes it stick. Used
     by platforms (switch, fan) that don't track the full per-device config
     ConnectLifeClimate._build_properties() uses, just the raw status dict.
+
+    Powering off is the exception: ConnectLife's API rejects a t_power=0
+    command bundled with other operational property changes with
+    errorCode 16 ("Command status mutex") — send only t_power (+ t_beep)
+    in that case instead of resending everything else too.
     """
-    props: dict[str, Any] = {}
-    for key, val in status.items():
-        if not key.startswith("t_"):
-            continue
-        try:
-            props[key] = int(val)
-        except (TypeError, ValueError):
-            props[key] = val
+    is_off = overrides.get("t_power", status.get("t_power", 0)) in {"0", 0}
+    if is_off:
+        props: dict[str, Any] = {"t_power": 0}
+    else:
+        props = {}
+        for key, val in status.items():
+            if not key.startswith("t_"):
+                continue
+            try:
+                props[key] = int(val)
+            except (TypeError, ValueError):
+                props[key] = val
     # Always reflect the configured beeping preference, not whatever the
     # device last happened to report (which may be stale or unset).
     props["t_beep"] = 1 if beeping else 0
@@ -754,42 +763,47 @@ class ConnectLifeClimate(CoordinatorEntity[ConnectLifeCoordinator], ClimateEntit
     def _build_properties(
         self, overrides: dict[str, Any] | None = None
     ) -> dict[str, Any]:
-        """Build the full property payload from current state + overrides."""
+        """Build the full property payload from current state + overrides.
+
+        ConnectLife's API rejects a t_power=0 command bundled with other
+        operational property changes with errorCode 16 ("Command status
+        mutex") — when turning off, send only t_power (+ t_beep), not the
+        rest of the current operating state.
+        """
         status = self._status()
         is_off = (overrides or {}).get("t_power", status.get("t_power", 0)) in {"0", 0}
 
         props: dict[str, Any] = {
             "t_power": 0 if is_off else 1,
-            "t_temp_type": status.get("t_temp_type", TEMP_CODE_CELSIUS),
-            "t_temp": int(status.get("t_temp", 24)),
-            "t_eco": int(status.get("t_eco", 0)),
             "t_beep": 1 if self._beeping else 0,
         }
 
-        # Work mode (only if device is on)
         if not is_off:
+            props["t_temp_type"] = status.get("t_temp_type", TEMP_CODE_CELSIUS)
+            props["t_temp"] = int(status.get("t_temp", 24))
+            props["t_eco"] = int(status.get("t_eco", 0))
             props["t_work_mode"] = int(status.get("t_work_mode", 0))
 
-        # Fan speed
-        if self._fan_options and "t_fan_speed" in status:
-            props["t_fan_speed"] = int(status["t_fan_speed"])
+            # Fan speed
+            if self._fan_options and "t_fan_speed" in status:
+                props["t_fan_speed"] = int(status["t_fan_speed"])
 
-        # Preset-controlled fields — include current values if present
-        # for key in ("t_fan_mute", "t_sleep", "t_super"):
-        for key in ("t_sleep", "t_super"):
-            if key in status:
-                props[key] = int(status[key])
+            # Preset-controlled fields — include current values if present
+            # for key in ("t_fan_mute", "t_sleep", "t_super"):
+            for key in ("t_sleep", "t_super"):
+                if key in status:
+                    props[key] = int(status[key])
 
-        # Swing — include whichever field(s) this device uses
-        if self._swing_options:
-            sample = next(iter(self._swing_options.values()))
-            if sample["type"] == "directional":
-                if "t_swing_direction" in status:
-                    props["t_swing_direction"] = int(status["t_swing_direction"])
-                if "t_swing_angle" in status:
-                    props["t_swing_angle"] = int(status["t_swing_angle"])
-            elif sample["type"] == "up_down" and "t_up_down" in status:
-                props["t_up_down"] = int(status["t_up_down"])
+            # Swing — include whichever field(s) this device uses
+            if self._swing_options:
+                sample = next(iter(self._swing_options.values()))
+                if sample["type"] == "directional":
+                    if "t_swing_direction" in status:
+                        props["t_swing_direction"] = int(status["t_swing_direction"])
+                    if "t_swing_angle" in status:
+                        props["t_swing_angle"] = int(status["t_swing_angle"])
+                elif sample["type"] == "up_down" and "t_up_down" in status:
+                    props["t_up_down"] = int(status["t_up_down"])
 
         if overrides:
             props.update(overrides)
