@@ -1,6 +1,6 @@
 """Constants for the ConnectLife integration."""
 
-DOMAIN = "connectlife_claudio"
+DOMAIN = "connectlife_claudio_wrapper"
 
 CONF_BEEPING = "beeping"
 CONF_DEVICES_CONFIG = "devices_config"
