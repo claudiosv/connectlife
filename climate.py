@@ -341,7 +341,12 @@ class ConnectLifeClimate(CoordinatorEntity[ConnectLifeCoordinator], ClimateEntit
 
     @property
     def temperature_unit(self) -> str:
-        temp_type = str(self._status().get("t_temp_type", TEMP_CODE_CELSIUS))
+        # t_temp_type comes from the API as a string ("0"/"1"), not an int —
+        # compare numerically or this always falls through to Celsius.
+        try:
+            temp_type = int(self._status().get("t_temp_type", TEMP_CODE_CELSIUS))
+        except (TypeError, ValueError):
+            temp_type = TEMP_CODE_CELSIUS
         unit = (
             UnitOfTemperature.FAHRENHEIT
             if temp_type == TEMP_CODE_FAHRENHEIT

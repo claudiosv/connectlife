@@ -92,7 +92,12 @@ def _device_info(device: dict[str, Any], puid: str, domain: str) -> DeviceInfo:
 
 
 def _temp_unit(status: dict[str, Any]) -> str:
-    temp_type = status.get("t_temp_type", 0)
+    # t_temp_type comes from the API as a string ("0"/"1"), not an int — compare
+    # numerically or this always falls through to Celsius.
+    try:
+        temp_type = int(status.get("t_temp_type", 0))
+    except (TypeError, ValueError):
+        temp_type = 0
     return (
         UnitOfTemperature.FAHRENHEIT
         if temp_type == TEMP_CODE_FAHRENHEIT
@@ -166,7 +171,7 @@ class ConnectLifeCurrentTempSensor(_ConnectLifeBaseSensor):
     ) -> None:
         super().__init__(coordinator, puid)
         self._attr_unique_id = f"{puid}_current_temperature"
-        self._attr_name = "Current Temperature"
+        self._attr_name = "Current Temperature (ConnectLife)"
         self._attr_device_info = _device_info(device, puid, DOMAIN)
 
     @property
@@ -193,7 +198,7 @@ class ConnectLifeTargetTempSensor(_ConnectLifeBaseSensor):
     ) -> None:
         super().__init__(coordinator, puid)
         self._attr_unique_id = f"{puid}_target_temperature"
-        self._attr_name = "Target Temperature"
+        self._attr_name = "Target Temperature (ConnectLife)"
         self._attr_device_info = _device_info(device, puid, DOMAIN)
 
     @property
