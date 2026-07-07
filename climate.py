@@ -1063,30 +1063,17 @@ class ConnectLifeClimate(CoordinatorEntity[ConnectLifeCoordinator], ClimateEntit
                     api_temp = _THERMOSTAT_COOL_F if is_f else _THERMOSTAT_COOL_C
                 else:
                     api_temp = _THERMOSTAT_IDLE_F if is_f else _THERMOSTAT_IDLE_C
-                try:
-                    device_temp = int(self._status().get("t_temp", -1))
-                except (TypeError, ValueError):
-                    device_temp = -1
-                if device_temp == api_temp:
-                    _LOGGER.debug(
-                        "[%s] Thermostat: sensor=%.1f target=%.1f -> already at "
-                        "t_temp=%s, skipping",
-                        self._puid,
-                        current_temp,
-                        self._target_room_temp,
-                        api_temp,
-                    )
+                _LOGGER.debug(
+                    "[%s] Thermostat: sensor=%.1f target=%.1f -> forcing temp=%s",
+                    self._puid,
+                    current_temp,
+                    self._target_room_temp,
+                    api_temp,
+                )
+                if self._matter_climate_entity and self.hvac_mode == HVACMode.COOL:
+                    await self._async_thermostat_via_matter(api_temp)
                 else:
-                    _LOGGER.debug(
-                        "[%s] Thermostat: sensor=%.1f target=%.1f -> forcing t_temp=%s",
-                        self._puid,
-                        current_temp,
-                        self._target_room_temp,
-                        api_temp,
-                    )
-                    await self.coordinator.api.update_device(
-                        self._puid, self._build_properties({"t_temp": api_temp})
-                    )
+                    await self._async_thermostat_via_connectlife(api_temp)
 
         # --- Dry-mode humidity control ---
         if (
@@ -1124,3 +1111,57 @@ class ConnectLifeClimate(CoordinatorEntity[ConnectLifeCoordinator], ClimateEntit
                         await self.coordinator.async_request_refresh()
                 except ValueError:
                     pass
+
+    async def _async_thermostat_via_connectlife(self, api_temp: int) -> None:
+        """Force ConnectLife's own t_temp to the bang-bang forcing value."""
+        try:
+            device_temp = int(self._status().get("t_temp", -1))
+        except (TypeError, ValueError):
+            device_temp = -1
+        if device_temp == api_temp:
+            _LOGGER.debug(
+                "[%s] Thermostat (ConnectLife): already at t_temp=%s, skipping",
+                self._puid,
+                api_temp,
+            )
+            return
+        await self.coordinator.api.update_device(
+            self._puid, self._build_properties({"t_temp": api_temp})
+        )
+
+    async def _async_thermostat_via_matter(self, api_temp: int) -> None:
+        """Force the linked Matter entity's target temp to the forcing value.
+
+        Same bang-bang strategy as the ConnectLife path (the external sensor
+        is the authority on when to cool, not the AC's own reading) — just
+        routed through Matter like a manual set_temperature would be.
+        """
+        matter_val = self._matter_temperature("temperature")
+        if matter_val is not None and int(matter_val) == api_temp:
+            _LOGGER.debug(
+                "[%s] Thermostat (Matter): already at temp=%s, skipping",
+                self._puid,
+                api_temp,
+            )
+            return
+        matter_temp = self._clamp_for_matter(float(api_temp))
+        _LOGGER.debug(
+            "[%s] Thermostat (Matter): forcing Matter temp=%r",
+            self._puid,
+            matter_temp,
+        )
+        try:
+            await self.hass.services.async_call(
+                "climate",
+                "set_temperature",
+                {"entity_id": self._matter_climate_entity, "temperature": matter_temp},
+                blocking=True,
+            )
+        except Exception:
+            _LOGGER.warning(
+                "Failed to force thermostat temperature on Matter entity %s, "
+                "falling back to ConnectLife API",
+                self._matter_climate_entity,
+                exc_info=True,
+            )
+            await self._async_thermostat_via_connectlife(api_temp)
