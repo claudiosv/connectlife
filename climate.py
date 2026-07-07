@@ -359,6 +359,11 @@ class ConnectLifeClimate(CoordinatorEntity[ConnectLifeCoordinator], ClimateEntit
 
     @property
     def target_temperature(self) -> float | None:
+        _LOGGER.warning(
+            "[%s] target_temperature called; matter_climate_entity=%r",
+            self._puid,
+            self._matter_climate_entity,
+        )
         if (
             self._current_temp_entity
             and self._external_temp_enabled
@@ -377,7 +382,7 @@ class ConnectLifeClimate(CoordinatorEntity[ConnectLifeCoordinator], ClimateEntit
                 val = self._matter_temperature("temperature")
                 _LOGGER.warning(
                     "[%s] target_temperature: hvac_mode=%s is not COOL, skipping "
-                    "Matter entity %s (temp=%.2f) and using ConnectLife t_temp=%r instead",
+                    "Matter entity %s (temp=%r) and using ConnectLife t_temp=%r instead",
                     self._puid,
                     self.hvac_mode,
                     self._matter_climate_entity,
@@ -389,6 +394,11 @@ class ConnectLifeClimate(CoordinatorEntity[ConnectLifeCoordinator], ClimateEntit
 
     @property
     def current_temperature(self) -> float | None:
+        _LOGGER.warning(
+            "[%s] current_temperature called; matter_climate_entity=%r",
+            self._puid,
+            self._matter_climate_entity,
+        )
         if self._current_temp_entity and self._external_temp_enabled:
             state = self.hass.states.get(self._current_temp_entity)
             if state and state.state not in ("unknown", "unavailable"):
