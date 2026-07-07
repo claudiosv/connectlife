@@ -734,6 +734,13 @@ class ConnectLifeClimate(CoordinatorEntity[ConnectLifeCoordinator], ClimateEntit
                 )
                 self._enqueue(overrides)
             else:
+                # Also tell ConnectLife's own cloud directly instead of relying
+                # on it picking up the Matter-driven change on its own — that
+                # sync can lag (or not happen), and a premature scheduled poll
+                # would otherwise clear our optimistic state back to stale data.
+                await self.coordinator.api.update_device(
+                    self._puid, self._build_properties(overrides)
+                )
                 self._schedule_refresh()
         else:
             self._enqueue(overrides)
@@ -780,6 +787,11 @@ class ConnectLifeClimate(CoordinatorEntity[ConnectLifeCoordinator], ClimateEntit
                 )
                 self._enqueue(overrides)
             else:
+                # See async_set_hvac_mode: also tell ConnectLife directly so a
+                # premature scheduled poll doesn't revert our optimistic state.
+                await self.coordinator.api.update_device(
+                    self._puid, self._build_properties(overrides)
+                )
                 self._schedule_refresh()
         else:
             overrides = {"t_temp": int(temp)}
