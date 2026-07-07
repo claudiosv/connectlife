@@ -1,0 +1,23 @@
+fan.py
+  s_fac51dae4c7995::t_ba59181b751dab 113-118,120-121,130-131
+  s_fac51dae4c7995::t_06db75cb1803cf 162,167,173-174,179-180,193-195
+  s_fac51dae4c7995::t_6cbbafb90072e3 84-89
+  s_fac51dae4c7995::t_8c1b69d3bcf86d 11
+  s_fac51dae4c7995::t_d90c1798ff9795 204-206
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "d1544604c7fa3553d027ff72afff0046160c0551",
+  "prompts": {},
+  "sessions": {
+    "s_fac51dae4c7995": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "aec3261c-c36e-4749-abb3-f3953121a284",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "Claudio Spiess <claudiosv@users.noreply.github.com>"
+    }
+  }
+}
