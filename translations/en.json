@@ -13,6 +13,7 @@
                     "current_humidity_entity": "External humidity sensor",
                     "target_humidity": "Target humidity for dry-mode control (%)",
                     "matter_climate_entity": "Hisense Matter AC (used for current/target temperature and mode when available)",
+                    "matter_temperature_sensor_entity": "Matter temperature sensor (optional, higher precision than the Matter climate entity)",
                     "matter_sync_timeout": "How long to trust our own state after a Matter command before falling back to ConnectLife's reported value",
                     "temperature_precision": "Temperature display precision (decimal places, 0 or 1)",
                     "humidity_precision": "Humidity display precision (decimal places)",

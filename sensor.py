@@ -22,6 +22,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from . import entry_config
 from .const import (
     CONF_MATTER_CLIMATE_ENTITY,
+    CONF_MATTER_TEMPERATURE_SENSOR_ENTITY,
     CONF_TEMPERATURE_SENSORS,
     DOMAIN,
     TEMP_CODE_FAHRENHEIT,
@@ -41,6 +42,7 @@ async def async_setup_entry(
     cfg = entry_config(entry)
     temp_sensors_enabled = cfg.get(CONF_TEMPERATURE_SENSORS, False)
     matter_climate_entity = cfg.get(CONF_MATTER_CLIMATE_ENTITY)
+    matter_temperature_sensor_entity = cfg.get(CONF_MATTER_TEMPERATURE_SENSOR_ENTITY)
 
     known_keys = {fd.key for fd in _STATUS_FIELDS}
 
@@ -67,6 +69,12 @@ async def async_setup_entry(
                     coordinator, puid, device, matter_climate_entity
                 )
             )
+            if matter_temperature_sensor_entity:
+                entities.append(
+                    ConnectLifeMatterTemperatureSensorMirror(
+                        coordinator, puid, device, matter_temperature_sensor_entity
+                    )
+                )
             entities.append(
                 ConnectLifeMatterSetpointSensor(
                     coordinator, puid, device, matter_climate_entity
@@ -77,12 +85,20 @@ async def async_setup_entry(
                     coordinator, puid, device, matter_climate_entity
                 )
             )
+        elif matter_temperature_sensor_entity:
+            entities.append(
+                ConnectLifeMatterTemperatureSensorMirror(
+                    coordinator, puid, device, matter_temperature_sensor_entity
+                )
+            )
 
     _LOGGER.debug(
-        "Setting up %d sensor entities for %d device(s) (matter_climate_entity=%r)",
+        "Setting up %d sensor entities for %d device(s) (matter_climate_entity=%r, "
+        "matter_temperature_sensor_entity=%r)",
         len(entities),
         len(coordinator.data),
         matter_climate_entity,
+        matter_temperature_sensor_entity,
     )
     async_add_entities(entities)
 
@@ -397,6 +413,51 @@ class ConnectLifeMatterTemperatureSensor(_ConnectLifeMatterMirrorSensor):
         val = state.attributes.get("current_temperature")
         try:
             return float(val) if val is not None else None
+        except (TypeError, ValueError):
+            return None
+
+
+class ConnectLifeMatterTemperatureSensorMirror(_ConnectLifeMatterMirrorSensor):
+    """Higher-precision temperature mirrored from a separate Matter sensor entity.
+
+    The Matter climate entity's current_temperature is rounded per HA's
+    climate precision system (e.g. whole degrees on Fahrenheit systems).
+    Some Matter devices also expose the same measurement as a plain sensor
+    entity without that rounding — configure it to see the raw value here,
+    alongside "Matter Current Temperature".
+    """
+
+    _attr_device_class = SensorDeviceClass.TEMPERATURE
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_suggested_display_precision = 1
+
+    def __init__(
+        self,
+        coordinator: ConnectLifeCoordinator,
+        puid: str,
+        device: dict[str, Any],
+        matter_entity_id: str,
+    ) -> None:
+        super().__init__(coordinator, puid, device, matter_entity_id)
+        self._attr_unique_id = f"{puid}_matter_temperature_sensor"
+        self._attr_name = "Matter Temperature (Sensor)"
+
+    @property
+    def native_unit_of_measurement(self) -> str:
+        state = self._matter_state()
+        if state:
+            unit = state.attributes.get("unit_of_measurement")
+            if unit:
+                return unit
+        return self.hass.config.units.temperature_unit
+
+    @property
+    def native_value(self) -> float | None:
+        state = self._matter_state()
+        if not state or state.state in ("unknown", "unavailable"):
+            return None
+        try:
+            return float(state.state)
         except (TypeError, ValueError):
             return None
 
