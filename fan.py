@@ -18,7 +18,7 @@ from homeassistant.util.percentage import (
 
 from . import entry_config
 from .climate import _build_fan_options, _build_full_properties, _get_device_config
-from .const import CONF_DEVICES_CONFIG, DOMAIN
+from .const import CONF_BEEPING, CONF_DEVICES_CONFIG, DOMAIN
 from .coordinator import ConnectLifeCoordinator
 from .sensor import _device_info
 
@@ -42,6 +42,7 @@ async def async_setup_entry(
     except json.JSONDecodeError:
         _LOGGER.warning("Invalid devices_config JSON, using defaults")
         devices_config = {}
+    beeping = cfg.get(CONF_BEEPING, False)
 
     entities = []
     for puid, device in coordinator.data.items():
@@ -49,7 +50,9 @@ async def async_setup_entry(
         device_config = _get_device_config(devices_config, feature_code)
         fan_options = _build_fan_options(device_config)
         if fan_options:
-            entities.append(ConnectLifeFan(coordinator, puid, device, fan_options))
+            entities.append(
+                ConnectLifeFan(coordinator, puid, device, fan_options, beeping)
+            )
     async_add_entities(entities)
 
 
@@ -70,10 +73,12 @@ class ConnectLifeFan(CoordinatorEntity[ConnectLifeCoordinator], FanEntity):
         puid: str,
         device: dict[str, Any],
         fan_options: dict[str, str],
+        beeping: bool = False,
     ) -> None:
         super().__init__(coordinator)
         self._puid = puid
         self._fan_options = fan_options
+        self._beeping = beeping
         self._attr_unique_id = f"{puid}_fan"
         self._attr_device_info = _device_info(device, puid, DOMAIN)
 
@@ -176,7 +181,7 @@ class ConnectLifeFan(CoordinatorEntity[ConnectLifeCoordinator], FanEntity):
     async def _async_update(self, overrides: dict[str, Any]) -> None:
         # Send the full current property set, not just the changed keys —
         # ConnectLife's API can silently drop a bare partial update.
-        props = _build_full_properties(self._status(), overrides)
+        props = _build_full_properties(self._status(), overrides, beeping=self._beeping)
         _LOGGER.debug("[%s] Sending update to ConnectLife: %s", self._puid, props)
         await self.coordinator.api.update_device(self._puid, props)
         await self.coordinator.async_request_refresh()

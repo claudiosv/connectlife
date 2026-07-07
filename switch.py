@@ -12,8 +12,9 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
+from . import entry_config
 from .climate import _build_full_properties
-from .const import DOMAIN
+from .const import CONF_BEEPING, DOMAIN
 from .coordinator import ConnectLifeCoordinator
 from .sensor import _device_info
 
@@ -42,8 +43,9 @@ async def async_setup_entry(
 ) -> None:
     """Set up ConnectLife toggle switches for each device."""
     coordinator: ConnectLifeCoordinator = hass.data[DOMAIN][entry.entry_id]
+    beeping = entry_config(entry).get(CONF_BEEPING, False)
     async_add_entities(
-        ConnectLifeToggleSwitch(coordinator, puid, device, td)
+        ConnectLifeToggleSwitch(coordinator, puid, device, td, beeping)
         for puid, device in coordinator.data.items()
         for td in _TOGGLE_SWITCHES
     )
@@ -60,10 +62,12 @@ class ConnectLifeToggleSwitch(CoordinatorEntity[ConnectLifeCoordinator], SwitchE
         puid: str,
         device: dict[str, Any],
         td: _ToggleDef,
+        beeping: bool = False,
     ) -> None:
         super().__init__(coordinator)
         self._puid = puid
         self._key = td.key
+        self._beeping = beeping
         self._optimistic_is_on: bool | None = None
         self._attr_unique_id = f"{puid}_{td.key}"
         self._attr_name = td.name
@@ -113,7 +117,11 @@ class ConnectLifeToggleSwitch(CoordinatorEntity[ConnectLifeCoordinator], SwitchE
         self.async_write_ha_state()
         # Send the full current property set, not just this one key —
         # ConnectLife's API can silently drop a bare single-property update.
-        props = _build_full_properties(self._status(), {self._key: 1 if value else 0})
+        props = _build_full_properties(
+            self._status(),
+            {self._key: 1 if value else 0},
+            beeping=self._beeping,
+        )
         _LOGGER.debug("[%s] Sending update to ConnectLife: %s", self._puid, props)
         await self.coordinator.api.update_device(self._puid, props)
         await self.coordinator.async_request_refresh()

@@ -230,7 +230,7 @@ def _build_swing_options(config: dict) -> dict[str, dict[str, str]]:
 
 
 def _build_full_properties(
-    status: dict[str, Any], overrides: dict[str, Any]
+    status: dict[str, Any], overrides: dict[str, Any], *, beeping: bool = False
 ) -> dict[str, Any]:
     """Build a full writable-property payload from current status + overrides.
 
@@ -248,6 +248,9 @@ def _build_full_properties(
             props[key] = int(val)
         except (TypeError, ValueError):
             props[key] = val
+    # Always reflect the configured beeping preference, not whatever the
+    # device last happened to report (which may be stale or unset).
+    props["t_beep"] = 1 if beeping else 0
     props.update(overrides)
     return props
 
@@ -1082,7 +1085,7 @@ class ConnectLifeClimate(CoordinatorEntity[ConnectLifeCoordinator], ClimateEntit
                         api_temp,
                     )
                     await self.coordinator.api.update_device(
-                        self._puid, {"t_temp": api_temp}
+                        self._puid, self._build_properties({"t_temp": api_temp})
                     )
 
         # --- Dry-mode humidity control ---
