@@ -35,7 +35,9 @@ from .const import (
     CONF_DEBOUNCE_DELAY,
     CONF_DEBUG_LOGGING,
     CONF_DEVICES_CONFIG,
+    CONF_DRY_IDLE_MODE,
     CONF_EXTERNAL_TEMP_ENABLED,
+    CONF_HUMIDITY_HYSTERESIS,
     CONF_HUMIDITY_PRECISION,
     CONF_MATTER_CLIMATE_ENTITY,
     CONF_MATTER_SYNC_TIMEOUT,
@@ -46,7 +48,10 @@ from .const import (
     CONF_TEMPERATURE_SENSORS,
     CONF_TEMPERATURE_UNIT,
     DEBOUNCE_DELAY_SECONDS,
+    DEFAULT_HUMIDITY_HYSTERESIS,
     DOMAIN,
+    DRY_IDLE_MODE_FAN_ONLY,
+    DRY_IDLE_MODE_OFF,
     MATTER_SYNC_TIMEOUT_SECONDS,
     TEMP_UNIT_CELSIUS,
     TEMP_UNIT_FAHRENHEIT,
@@ -152,6 +157,22 @@ def _options_schema(current: dict[str, Any]) -> vol.Schema:
             description={"suggested_value": current.get(CONF_TARGET_HUMIDITY)},
         ): NumberSelector(
             NumberSelectorConfig(min=30, max=80, step=1, mode=NumberSelectorMode.BOX)
+        ),
+        vol.Optional(
+            CONF_DRY_IDLE_MODE,
+            default=current.get(CONF_DRY_IDLE_MODE, DRY_IDLE_MODE_FAN_ONLY),
+        ): vol.In([DRY_IDLE_MODE_FAN_ONLY, DRY_IDLE_MODE_OFF]),
+        vol.Optional(
+            CONF_HUMIDITY_HYSTERESIS,
+            default=current.get(CONF_HUMIDITY_HYSTERESIS, DEFAULT_HUMIDITY_HYSTERESIS),
+        ): NumberSelector(
+            NumberSelectorConfig(
+                min=0,
+                max=20,
+                step=1,
+                mode=NumberSelectorMode.BOX,
+                unit_of_measurement="%",
+            )
         ),
         vol.Optional(
             CONF_MATTER_CLIMATE_ENTITY,
@@ -369,6 +390,12 @@ class ConnectLifeOptionsFlow(OptionsFlow):
                                 CONF_CURRENT_HUMIDITY_ENTITY
                             ),
                             CONF_TARGET_HUMIDITY: user_input.get(CONF_TARGET_HUMIDITY),
+                            CONF_DRY_IDLE_MODE: user_input.get(
+                                CONF_DRY_IDLE_MODE, DRY_IDLE_MODE_FAN_ONLY
+                            ),
+                            CONF_HUMIDITY_HYSTERESIS: user_input.get(
+                                CONF_HUMIDITY_HYSTERESIS, DEFAULT_HUMIDITY_HYSTERESIS
+                            ),
                             CONF_MATTER_CLIMATE_ENTITY: user_input.get(
                                 CONF_MATTER_CLIMATE_ENTITY
                             ),

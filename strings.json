@@ -12,6 +12,8 @@
           "external_temp_enabled": "Use the external temperature sensor",
           "current_humidity_entity": "External humidity sensor (overrides AC reading)",
           "target_humidity": "Target humidity for dry-mode control (%)",
+          "dry_idle_mode": "Dry mode action once target humidity is reached (fan_only or off)",
+          "humidity_hysteresis": "Humidity buffer before switching dry/idle modes (percentage points)",
           "matter_climate_entity": "Hisense Matter AC (used for current/target temperature and mode when available)",
           "matter_temperature_sensor_entity": "Matter temperature sensor (optional, higher precision than the Matter climate entity)",
           "matter_sync_timeout": "How long to trust our own state after a Matter command before falling back to ConnectLife's reported value",

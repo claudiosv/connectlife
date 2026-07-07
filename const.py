@@ -10,6 +10,8 @@ CONF_CURRENT_TEMP_ENTITY = "current_temperature_entity"
 CONF_EXTERNAL_TEMP_ENABLED = "external_temp_enabled"
 CONF_CURRENT_HUMIDITY_ENTITY = "current_humidity_entity"
 CONF_TARGET_HUMIDITY = "target_humidity"
+CONF_DRY_IDLE_MODE = "dry_idle_mode"
+CONF_HUMIDITY_HYSTERESIS = "humidity_hysteresis"
 CONF_MATTER_CLIMATE_ENTITY = "matter_climate_entity"
 CONF_MATTER_TEMPERATURE_SENSOR_ENTITY = "matter_temperature_sensor_entity"
 CONF_MATTER_SYNC_TIMEOUT = "matter_sync_timeout"
@@ -22,6 +24,14 @@ CONF_DEBUG_LOGGING = "debug_logging"
 
 TEMP_UNIT_CELSIUS = "celsius"
 TEMP_UNIT_FAHRENHEIT = "fahrenheit"
+
+# What to do with the linked Matter device once the dry-mode humidity target
+# is reached (see DRY_IDLE_MODE_* below).
+DRY_IDLE_MODE_FAN_ONLY = "fan_only"
+DRY_IDLE_MODE_OFF = "off"
+# Percentage points of slack around the target before switching dry<->idle,
+# so humidity hovering right at the target doesn't cause rapid cycling.
+DEFAULT_HUMIDITY_HYSTERESIS = 3
 
 UPDATE_INTERVAL_SECONDS = 60
 COMMAND_REFRESH_DELAY_SECONDS = 5  # seconds after a command before re-polling the cloud

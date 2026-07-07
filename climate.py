@@ -35,7 +35,9 @@ from .const import (
     CONF_CURRENT_TEMP_ENTITY,
     CONF_DEBOUNCE_DELAY,
     CONF_DEVICES_CONFIG,
+    CONF_DRY_IDLE_MODE,
     CONF_EXTERNAL_TEMP_ENABLED,
+    CONF_HUMIDITY_HYSTERESIS,
     CONF_HUMIDITY_PRECISION,
     CONF_MATTER_CLIMATE_ENTITY,
     CONF_MATTER_SYNC_TIMEOUT,
@@ -43,7 +45,10 @@ from .const import (
     CONF_TEMPERATURE_PRECISION,
     DEBOUNCE_DELAY_SECONDS,
     DEFAULT_DEVICES_CONFIG,
+    DEFAULT_HUMIDITY_HYSTERESIS,
     DOMAIN,
+    DRY_IDLE_MODE_FAN_ONLY,
+    DRY_IDLE_MODE_OFF,
     MATTER_SYNC_TIMEOUT_SECONDS,
     TEMP_CODE_CELSIUS,
     TEMP_CODE_FAHRENHEIT,
@@ -116,6 +121,10 @@ async def async_setup_entry(
     external_temp_enabled = cfg.get(CONF_EXTERNAL_TEMP_ENABLED, True)
     current_humidity_entity = cfg.get(CONF_CURRENT_HUMIDITY_ENTITY)
     target_humidity = cfg.get(CONF_TARGET_HUMIDITY)
+    dry_idle_mode = cfg.get(CONF_DRY_IDLE_MODE, DRY_IDLE_MODE_FAN_ONLY)
+    humidity_hysteresis = float(
+        cfg.get(CONF_HUMIDITY_HYSTERESIS, DEFAULT_HUMIDITY_HYSTERESIS)
+    )
     matter_climate_entity = cfg.get(CONF_MATTER_CLIMATE_ENTITY)
     matter_sync_timeout = float(
         cfg.get(CONF_MATTER_SYNC_TIMEOUT, MATTER_SYNC_TIMEOUT_SECONDS)
@@ -144,6 +153,8 @@ async def async_setup_entry(
             temperature_precision,
             humidity_precision,
             matter_sync_timeout,
+            dry_idle_mode,
+            humidity_hysteresis,
         )
         for puid, device in coordinator.data.items()
     ]
@@ -278,6 +289,8 @@ class ConnectLifeClimate(CoordinatorEntity[ConnectLifeCoordinator], ClimateEntit
         temperature_precision: int | None = None,
         humidity_precision: int | None = None,
         matter_sync_timeout: float = MATTER_SYNC_TIMEOUT_SECONDS,
+        dry_idle_mode: str = DRY_IDLE_MODE_FAN_ONLY,
+        humidity_hysteresis: float = DEFAULT_HUMIDITY_HYSTERESIS,
     ) -> None:
         super().__init__(coordinator)
         self._puid = puid
@@ -291,6 +304,16 @@ class ConnectLifeClimate(CoordinatorEntity[ConnectLifeCoordinator], ClimateEntit
         self._matter_sync_timeout = matter_sync_timeout
         self._temperature_precision = temperature_precision
         self._humidity_precision = humidity_precision
+        self._dry_idle_mode = dry_idle_mode
+        self._humidity_hysteresis = humidity_hysteresis
+        # Sticky "user asked for dry mode, humidity is doing the rest" state:
+        # once set, hvac_mode keeps reporting DRY even while we're internally
+        # idling the linked Matter entity (fan_only/off) to hold the target
+        # humidity — only an explicit async_set_hvac_mode() call clears it.
+        self._dry_sticky = False
+        # Whether the humidity-managed loop is currently in its idle
+        # sub-state (as opposed to actively driving Matter's dry mode).
+        self._dry_idling = False
         self._target_humidity = (
             float(target_humidity) if target_humidity is not None else None
         )
@@ -623,6 +646,12 @@ class ConnectLifeClimate(CoordinatorEntity[ConnectLifeCoordinator], ClimateEntit
 
     @property
     def hvac_mode(self) -> HVACMode:
+        if self._dry_sticky:
+            # We're managing dry/idle internally via humidity — don't let the
+            # Matter/ConnectLife idle mode (fan_only/off) leak into our own
+            # reported mode until the user explicitly changes it.
+            return HVACMode.DRY
+
         status = self._status()
         if status.get("t_power") == "0" or status.get("t_power") == 0:
             return HVACMode.OFF
@@ -770,6 +799,28 @@ class ConnectLifeClimate(CoordinatorEntity[ConnectLifeCoordinator], ClimateEntit
     async def async_set_hvac_mode(self, hvac_mode: HVACMode) -> None:
         """Set HVAC mode."""
         _LOGGER.debug("[%s] async_set_hvac_mode(%s)", self._puid, hvac_mode)
+
+        # Only DRY, with a humidity entity/target and a linked Matter device,
+        # enters our own humidity-managed dry/idle loop — any other explicit
+        # mode change (including DRY -> DRY without those prerequisites)
+        # clears it.
+        self._dry_sticky = bool(
+            hvac_mode == HVACMode.DRY
+            and self._matter_climate_entity
+            and self._current_humidity_entity
+            and self._target_humidity is not None
+        )
+        if self._dry_sticky:
+            self._dry_idling = False
+            _LOGGER.debug(
+                "[%s] Entering humidity-managed dry mode (target=%.1f%%, "
+                "hysteresis=%.1f, idle_mode=%s)",
+                self._puid,
+                self._target_humidity,
+                self._humidity_hysteresis,
+                self._dry_idle_mode,
+            )
+
         if hvac_mode == HVACMode.OFF:
             overrides: dict[str, Any] = {"t_power": 0}
         else:
@@ -816,6 +867,11 @@ class ConnectLifeClimate(CoordinatorEntity[ConnectLifeCoordinator], ClimateEntit
                 self._schedule_refresh()
         else:
             self._enqueue(overrides)
+
+        if self._dry_sticky:
+            # Check right away in case humidity is already past the target,
+            # instead of waiting for the next sensor update.
+            await self._async_dry_humidity_control()
 
     async def async_set_temperature(self, **kwargs: Any) -> None:
         """Set target temperature."""
@@ -1082,11 +1138,16 @@ class ConnectLifeClimate(CoordinatorEntity[ConnectLifeCoordinator], ClimateEntit
                     await self._async_thermostat_via_connectlife(api_temp)
 
         # --- Dry-mode humidity control ---
-        if (
+        if self._dry_sticky:
+            await self._async_dry_humidity_control()
+        elif (
             self._current_humidity_entity
             and self._target_humidity is not None
             and self.hvac_mode == HVACMode.DRY
         ):
+            # No Matter entity linked (or humidity/target not configured when
+            # dry mode was set) — fall back to the simple ConnectLife-only
+            # on/off toggle.
             state = self.hass.states.get(self._current_humidity_entity)
             if state and state.state not in ("unknown", "unavailable"):
                 try:
@@ -1103,7 +1164,7 @@ class ConnectLifeClimate(CoordinatorEntity[ConnectLifeCoordinator], ClimateEntit
                         await self.coordinator.api.update_device(
                             self._puid, self._build_properties({"t_power": 1})
                         )
-                        await self.coordinator.async_request_refresh()
+                        self._schedule_refresh()
                     elif current_humidity <= self._target_humidity and is_on:
                         _LOGGER.debug(
                             "[%s] humidity %.1f <= target %.1f — turning off",
@@ -1114,7 +1175,7 @@ class ConnectLifeClimate(CoordinatorEntity[ConnectLifeCoordinator], ClimateEntit
                         await self.coordinator.api.update_device(
                             self._puid, self._build_properties({"t_power": 0})
                         )
-                        await self.coordinator.async_request_refresh()
+                        self._schedule_refresh()
                 except ValueError:
                     pass
 
@@ -1173,3 +1234,102 @@ class ConnectLifeClimate(CoordinatorEntity[ConnectLifeCoordinator], ClimateEntit
             await self.coordinator.api.update_device(
                 self._puid, self._build_properties({"t_temp": int(target_temp)})
             )
+
+    async def _async_dry_humidity_control(self) -> None:
+        """Cycle the linked Matter entity between dry and the configured idle
+        mode (fan_only/off) to hold the target humidity, hysteresis-limited
+        so it doesn't flip modes on every small reading change.
+
+        Our own hvac_mode keeps reporting DRY throughout (see _dry_sticky) —
+        this only drives the underlying Matter device, not what the user
+        sees on our entity.
+        """
+        if not self._dry_sticky or not self._current_humidity_entity:
+            return
+        target = self._target_humidity
+        if target is None:
+            return
+        state = self.hass.states.get(self._current_humidity_entity)
+        if not state or state.state in ("unknown", "unavailable"):
+            return
+        try:
+            current_humidity = float(state.state)
+        except (TypeError, ValueError):
+            return
+
+        buffer = self._humidity_hysteresis
+        if self._dry_idling:
+            if current_humidity >= target + buffer:
+                _LOGGER.debug(
+                    "[%s] Dry/idle: humidity %.1f%% >= target+buffer %.1f%% "
+                    "— resuming dry mode",
+                    self._puid,
+                    current_humidity,
+                    target + buffer,
+                )
+                self._dry_idling = False
+                await self._async_set_matter_hvac_mode(HVACMode.DRY)
+        elif current_humidity <= target - buffer:
+            _LOGGER.debug(
+                "[%s] Dry/idle: humidity %.1f%% <= target-buffer %.1f%% — "
+                "idling (%s)",
+                self._puid,
+                current_humidity,
+                target - buffer,
+                self._dry_idle_mode,
+            )
+            self._dry_idling = True
+            if self._dry_idle_mode == DRY_IDLE_MODE_OFF:
+                await self._async_set_matter_hvac_mode(HVACMode.OFF)
+            else:
+                await self._async_set_matter_hvac_mode(HVACMode.FAN_ONLY)
+                await self._async_set_low_fan_speed()
+
+    async def _async_set_matter_hvac_mode(self, hvac_mode: HVACMode) -> None:
+        """Set the linked Matter entity's mode directly.
+
+        Bypasses async_set_hvac_mode on purpose — that method would clear
+        _dry_sticky, which is exactly what the dry/idle loop must not do.
+        """
+        _LOGGER.debug(
+            "[%s] Dry/idle control: setting Matter entity %s to %s",
+            self._puid,
+            self._matter_climate_entity,
+            hvac_mode,
+        )
+        try:
+            await self.hass.services.async_call(
+                "climate",
+                "set_hvac_mode",
+                {"entity_id": self._matter_climate_entity, "hvac_mode": hvac_mode},
+                blocking=True,
+            )
+        except Exception:
+            _LOGGER.warning(
+                "Failed to set Matter entity %s to %s for dry/idle humidity "
+                "control",
+                self._matter_climate_entity,
+                hvac_mode,
+                exc_info=True,
+            )
+
+    async def _async_set_low_fan_speed(self) -> None:
+        """Set ConnectLife's fan speed to its lowest named step.
+
+        Matter has no concept of fan speed, so entering the fan_only idle
+        mode needs a separate ConnectLife-side call to actually get "low".
+        """
+        named_speeds = [name for name in self._fan_options if name != "auto"]
+        if not named_speeds:
+            return
+        low_name = "low" if "low" in named_speeds else named_speeds[0]
+        fan_val = self._fan_options[low_name]
+        _LOGGER.debug(
+            "[%s] Dry/idle control: setting ConnectLife fan speed to %s (%s)",
+            self._puid,
+            low_name,
+            fan_val,
+        )
+        await self.coordinator.api.update_device(
+            self._puid, self._build_properties({"t_fan_speed": int(fan_val)})
+        )
