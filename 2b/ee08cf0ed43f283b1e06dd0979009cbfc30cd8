@@ -1,0 +1,26 @@
+sensor.py
+  h_aceaeb4e74d6dc 270
+fan.py
+  s_fac51dae4c7995::t_0cc4fffb4d23b9 14-17,27-29,57-62,79-89,102-108,116-122,125-126,139-143,151-164,171
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "2bee08cf0ed43f283b1e06dd0979009cbfc30cd8",
+  "prompts": {},
+  "humans": {
+    "h_aceaeb4e74d6dc": {
+      "author": "Claudio Spiess <claudiosv@users.noreply.github.com>"
+    }
+  },
+  "sessions": {
+    "s_fac51dae4c7995": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "aec3261c-c36e-4749-abb3-f3953121a284",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "Claudio Spiess <claudiosv@users.noreply.github.com>"
+    }
+  }
+}
