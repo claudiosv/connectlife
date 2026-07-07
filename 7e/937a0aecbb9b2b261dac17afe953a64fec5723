@@ -1,0 +1,16 @@
+const.py
+  h_aceaeb4e74d6dc 3
+manifest.json
+  h_aceaeb4e74d6dc 4
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "7e937a0aecbb9b2b261dac17afe953a64fec5723",
+  "prompts": {},
+  "humans": {
+    "h_aceaeb4e74d6dc": {
+      "author": "Claudio Spiess <claudiosv@users.noreply.github.com>"
+    }
+  }
+}
