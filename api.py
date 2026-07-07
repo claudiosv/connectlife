@@ -589,6 +589,10 @@ class ConnectLifeApi:
         self, device_id: str, properties: dict[str, Any]
     ) -> dict[str, Any]:
         token = await self._ensure_token()
+        # The gateway expects property values as strings (e.g. {"t_temp": "75"}),
+        # not JSON numbers/booleans — sending raw ints causes "Signature check
+        # fail" even though the signing algorithm itself is otherwise correct.
+        properties = {k: str(v) for k, v in properties.items()}
         _LOGGER.info("Updating device %s: %s", device_id, properties)
         payload = self._common_params() | {
             "accessToken": token,
