@@ -11,6 +11,10 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
+from homeassistant.util.percentage import (
+    ordered_list_item_to_percentage,
+    percentage_to_ordered_list_item,
+)
 
 from . import entry_config
 from .climate import _build_fan_options, _get_device_config
@@ -19,6 +23,9 @@ from .coordinator import ConnectLifeCoordinator
 from .sensor import _device_info
 
 _LOGGER = logging.getLogger(__name__)
+
+# Not a discrete speed step — kept as a separate preset instead of a percentage.
+_AUTO_SLUG = "auto"
 
 
 async def async_setup_entry(
@@ -47,15 +54,15 @@ async def async_setup_entry(
 
 
 class ConnectLifeFan(CoordinatorEntity[ConnectLifeCoordinator], FanEntity):
-    """Represents a ConnectLife AC's fan speed as a standalone fan entity."""
+    """Represents a ConnectLife AC's fan speed as a standalone fan entity.
+
+    Named speeds (e.g. low/medium/high) map to ordered percentage steps —
+    the same UI Home Assistant uses for any fan with a small speed_count.
+    "auto" isn't a fixed speed, so it's exposed as a preset mode instead.
+    """
 
     _attr_has_entity_name = True
     _attr_name = "Fan"
-    _attr_supported_features = (
-        FanEntityFeature.PRESET_MODE
-        | FanEntityFeature.TURN_ON
-        | FanEntityFeature.TURN_OFF
-    )
 
     def __init__(
         self,
@@ -69,7 +76,17 @@ class ConnectLifeFan(CoordinatorEntity[ConnectLifeCoordinator], FanEntity):
         self._fan_options = fan_options
         self._attr_unique_id = f"{puid}_fan"
         self._attr_device_info = _device_info(device, puid, DOMAIN)
-        self._attr_preset_modes = list(fan_options.keys())
+
+        self._named_speeds = [name for name in fan_options if name != _AUTO_SLUG]
+
+        features = FanEntityFeature.TURN_ON | FanEntityFeature.TURN_OFF
+        if self._named_speeds:
+            features |= FanEntityFeature.SET_SPEED
+            self._attr_speed_count = len(self._named_speeds)
+        if _AUTO_SLUG in fan_options:
+            features |= FanEntityFeature.PRESET_MODE
+            self._attr_preset_modes = [_AUTO_SLUG]
+        self._attr_supported_features = features
 
     @property
     def available(self) -> bool:
@@ -82,6 +99,13 @@ class ConnectLifeFan(CoordinatorEntity[ConnectLifeCoordinator], FanEntity):
     def _status(self) -> dict[str, Any]:
         return self.coordinator.data.get(self._puid, {}).get("statusList", {})
 
+    def _current_speed_name(self) -> str | None:
+        fan_val = str(self._status().get("t_fan_speed", ""))
+        for name, api_val in self._fan_options.items():
+            if api_val == fan_val:
+                return name
+        return None
+
     @property
     def is_on(self) -> bool | None:
         val = self._status().get("t_power")
@@ -90,12 +114,16 @@ class ConnectLifeFan(CoordinatorEntity[ConnectLifeCoordinator], FanEntity):
         return str(val) == "1"
 
     @property
+    def percentage(self) -> int | None:
+        name = self._current_speed_name()
+        if name is None or name not in self._named_speeds:
+            return None
+        return ordered_list_item_to_percentage(self._named_speeds, name)
+
+    @property
     def preset_mode(self) -> str | None:
-        fan_val = str(self._status().get("t_fan_speed", ""))
-        for name, api_val in self._fan_options.items():
-            if api_val == fan_val:
-                return name
-        return None
+        name = self._current_speed_name()
+        return name if name == _AUTO_SLUG else None
 
     async def async_turn_on(
         self,
@@ -108,11 +136,30 @@ class ConnectLifeFan(CoordinatorEntity[ConnectLifeCoordinator], FanEntity):
             fan_val = self._fan_options.get(preset_mode)
             if fan_val is not None:
                 props["t_fan_speed"] = int(fan_val)
+        elif percentage is not None:
+            name = percentage_to_ordered_list_item(self._named_speeds, percentage)
+            fan_val = self._fan_options.get(name)
+            if fan_val is not None:
+                props["t_fan_speed"] = int(fan_val)
         await self.coordinator.api.update_device(self._puid, props)
         await self.coordinator.async_request_refresh()
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         await self.coordinator.api.update_device(self._puid, {"t_power": 0})
+        await self.coordinator.async_request_refresh()
+
+    async def async_set_percentage(self, percentage: int) -> None:
+        if percentage == 0:
+            await self.async_turn_off()
+            return
+        name = percentage_to_ordered_list_item(self._named_speeds, percentage)
+        fan_val = self._fan_options.get(name)
+        if fan_val is None:
+            _LOGGER.warning("Unknown fan speed for percentage %s", percentage)
+            return
+        await self.coordinator.api.update_device(
+            self._puid, {"t_power": 1, "t_fan_speed": int(fan_val)}
+        )
         await self.coordinator.async_request_refresh()
 
     async def async_set_preset_mode(self, preset_mode: str) -> None:
@@ -121,6 +168,6 @@ class ConnectLifeFan(CoordinatorEntity[ConnectLifeCoordinator], FanEntity):
             _LOGGER.warning("Unknown fan preset mode: %s", preset_mode)
             return
         await self.coordinator.api.update_device(
-            self._puid, {"t_fan_speed": int(fan_val)}
+            self._puid, {"t_power": 1, "t_fan_speed": int(fan_val)}
         )
         await self.coordinator.async_request_refresh()
