@@ -474,9 +474,10 @@ class ConnectLifeApi:
         parts = []
         for k, v in sorted_items:
             if isinstance(v, (dict, list)):
-                v = json.dumps(v, separators=(",", ":"), indent=4)
+                v = json.dumps(v, separators=(",", ":"))
             parts.append(f"{k}={v}")
         to_hash = "&".join(parts) + SIGN_MAGIC
+        _LOGGER.debug("Sign base string: %s", to_hash)
         digest = hashlib.sha256(to_hash.encode()).digest()
         encrypted = self._public_key.encrypt(digest, padding.PKCS1v15())
         return base64.b64encode(encrypted).decode()
