@@ -921,6 +921,10 @@ class ConnectLifeClimate(CoordinatorEntity[ConnectLifeCoordinator], ClimateEntit
     @callback
     def _async_matter_event(self, _event: Any) -> None:
         """Push state immediately when the linked Matter entity updates."""
+        # Drop any locally-optimistic target temp so a change made directly
+        # on the Matter side (not through this entity) isn't shadowed by a
+        # stale guess until ConnectLife's next poll clears it.
+        self._optimistic_status.pop("t_temp", None)
         self.async_write_ha_state()
 
     async def _async_control(self) -> None:
