@@ -1368,6 +1368,16 @@ class ConnectLifeClimate(
                 hvac_mode,
                 exc_info=True,
             )
+            return
+        # Keep our own t_power tracking in sync with what we just told
+        # Matter. Without this, a later _build_properties() call (e.g.
+        # setting fan speed for the idle mode) would infer power state from
+        # ConnectLife's own polled status, which can still be lagging behind
+        # (observed 20-90s+ delays) — most dangerously right after leaving
+        # an "off" idle cycle, where a stale t_power=0 would get resent and
+        # turn the device back off as a side effect of an unrelated command.
+        self._set_optimistic({"t_power": 0 if hvac_mode == HVACMode.OFF else 1})
+        self.async_write_ha_state()
 
     async def _async_set_low_fan_speed(self) -> None:
         """Set ConnectLife's fan speed to its lowest named step.
@@ -1386,6 +1396,10 @@ class ConnectLifeClimate(
             low_name,
             fan_val,
         )
+        # Explicit t_power=1 override — this call only ever runs while
+        # entering the fan_only idle mode, so the device must be on
+        # regardless of what _build_properties would otherwise infer.
         await self.coordinator.api.update_device(
-            self._puid, self._build_properties({"t_fan_speed": int(fan_val)})
+            self._puid,
+            self._build_properties({"t_power": 1, "t_fan_speed": int(fan_val)}),
         )
