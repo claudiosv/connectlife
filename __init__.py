@@ -102,13 +102,24 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if hass.is_running:
         await _async_patch_matter_dry_fan_support(hass, matter_devices)
     else:
+        patch_fired = False
 
         async def _patch(_event: Event) -> None:
+            nonlocal patch_fired
+            patch_fired = True
             await _async_patch_matter_dry_fan_support(hass, matter_devices)
 
-        entry.async_on_unload(
-            hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STARTED, _patch)
+        remove_listener = hass.bus.async_listen_once(
+            EVENT_HOMEASSISTANT_STARTED, _patch
         )
+
+        def _cleanup_listener() -> None:
+            # async_listen_once already removes itself once the event fires;
+            # calling remove_listener() again logs "unknown job listener".
+            if not patch_fired:
+                remove_listener()
+
+        entry.async_on_unload(_cleanup_listener)
 
     return True
 

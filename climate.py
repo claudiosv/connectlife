@@ -400,12 +400,9 @@ class ConnectLifeClimate(CoordinatorEntity[ConnectLifeCoordinator], ClimateEntit
             self._matter_climate_entity,
         )
         if self._current_temp_entity and self._external_temp_enabled:
-            state = self.hass.states.get(self._current_temp_entity)
-            if state and state.state not in ("unknown", "unavailable"):
-                try:
-                    return float(state.state)
-                except ValueError:
-                    pass
+            val = self._sensor_temperature(self._current_temp_entity)
+            if val is not None:
+                return val
         if self._matter_climate_entity:
             val = self._matter_temperature("current_temperature")
             if val is not None:
@@ -460,6 +457,26 @@ class ConnectLifeClimate(CoordinatorEntity[ConnectLifeCoordinator], ClimateEntit
                 our_unit,
             )
             return converted
+        except (TypeError, ValueError):
+            return None
+
+    def _sensor_temperature(self, entity_id: str) -> float | None:
+        """Read a plain sensor entity's temperature, converted to our own unit.
+
+        Unlike climate entities, sensor entities expose their own
+        unit_of_measurement as a state attribute — use it directly rather
+        than assuming it matches our own temperature_unit.
+        """
+        state = self.hass.states.get(entity_id)
+        if not state or state.state in ("unknown", "unavailable"):
+            return None
+        try:
+            raw = float(state.state)
+        except ValueError:
+            return None
+        sensor_unit = state.attributes.get("unit_of_measurement", self.temperature_unit)
+        try:
+            return TemperatureConverter.convert(raw, sensor_unit, self.temperature_unit)
         except (TypeError, ValueError):
             return None
 
@@ -858,20 +875,16 @@ class ConnectLifeClimate(CoordinatorEntity[ConnectLifeCoordinator], ClimateEntit
         """Apply external-sensor thermostat and dry-mode humidity control."""
         # --- Temperature thermostat ---
         if self._current_temp_entity and self._target_room_temp is not None:
-            state = self.hass.states.get(self._current_temp_entity)
-            if state and state.state not in ("unknown", "unavailable"):
-                try:
-                    current_temp = float(state.state)
-                    is_f = self.temperature_unit == UnitOfTemperature.FAHRENHEIT
-                    if current_temp > self._target_room_temp:
-                        api_temp = _THERMOSTAT_COOL_F if is_f else _THERMOSTAT_COOL_C
-                    else:
-                        api_temp = _THERMOSTAT_IDLE_F if is_f else _THERMOSTAT_IDLE_C
-                    await self.coordinator.api.update_device(
-                        self._puid, {"t_temp": api_temp}
-                    )
-                except ValueError:
-                    pass
+            current_temp = self._sensor_temperature(self._current_temp_entity)
+            if current_temp is not None:
+                is_f = self.temperature_unit == UnitOfTemperature.FAHRENHEIT
+                if current_temp > self._target_room_temp:
+                    api_temp = _THERMOSTAT_COOL_F if is_f else _THERMOSTAT_COOL_C
+                else:
+                    api_temp = _THERMOSTAT_IDLE_F if is_f else _THERMOSTAT_IDLE_C
+                await self.coordinator.api.update_device(
+                    self._puid, {"t_temp": api_temp}
+                )
 
         # --- Dry-mode humidity control ---
         if (
