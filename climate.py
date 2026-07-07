@@ -229,6 +229,29 @@ def _build_swing_options(config: dict) -> dict[str, dict[str, str]]:
     return options
 
 
+def _build_full_properties(
+    status: dict[str, Any], overrides: dict[str, Any]
+) -> dict[str, Any]:
+    """Build a full writable-property payload from current status + overrides.
+
+    ConnectLife's API can silently ignore (or the AC firmware reverts) a bare
+    single-property update like {"t_up_down": 1} — resending the device's
+    other current values alongside the change is what makes it stick. Used
+    by platforms (switch, fan) that don't track the full per-device config
+    ConnectLifeClimate._build_properties() uses, just the raw status dict.
+    """
+    props: dict[str, Any] = {}
+    for key, val in status.items():
+        if not key.startswith("t_"):
+            continue
+        try:
+            props[key] = int(val)
+        except (TypeError, ValueError):
+            props[key] = val
+    props.update(overrides)
+    return props
+
+
 class ConnectLifeClimate(CoordinatorEntity[ConnectLifeCoordinator], ClimateEntity):
     """Representation of a ConnectLife AC as a HA climate entity."""
 

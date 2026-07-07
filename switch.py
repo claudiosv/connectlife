@@ -11,6 +11,7 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
+from .climate import _build_full_properties
 from .const import DOMAIN
 from .coordinator import ConnectLifeCoordinator
 from .sensor import _device_info
@@ -100,7 +101,8 @@ class ConnectLifeToggleSwitch(CoordinatorEntity[ConnectLifeCoordinator], SwitchE
     async def _async_set(self, value: bool) -> None:
         self._optimistic_is_on = value
         self.async_write_ha_state()
-        await self.coordinator.api.update_device(
-            self._puid, {self._key: 1 if value else 0}
-        )
+        # Send the full current property set, not just this one key —
+        # ConnectLife's API can silently drop a bare single-property update.
+        props = _build_full_properties(self._status(), {self._key: 1 if value else 0})
+        await self.coordinator.api.update_device(self._puid, props)
         await self.coordinator.async_request_refresh()

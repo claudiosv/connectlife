@@ -17,7 +17,7 @@ from homeassistant.util.percentage import (
 )
 
 from . import entry_config
-from .climate import _build_fan_options, _get_device_config
+from .climate import _build_fan_options, _build_full_properties, _get_device_config
 from .const import CONF_DEVICES_CONFIG, DOMAIN
 from .coordinator import ConnectLifeCoordinator
 from .sensor import _device_info
@@ -131,22 +131,20 @@ class ConnectLifeFan(CoordinatorEntity[ConnectLifeCoordinator], FanEntity):
         preset_mode: str | None = None,
         **kwargs: Any,
     ) -> None:
-        props: dict[str, Any] = {"t_power": 1}
+        overrides: dict[str, Any] = {"t_power": 1}
         if preset_mode is not None:
             fan_val = self._fan_options.get(preset_mode)
             if fan_val is not None:
-                props["t_fan_speed"] = int(fan_val)
+                overrides["t_fan_speed"] = int(fan_val)
         elif percentage is not None:
             name = percentage_to_ordered_list_item(self._named_speeds, percentage)
             fan_val = self._fan_options.get(name)
             if fan_val is not None:
-                props["t_fan_speed"] = int(fan_val)
-        await self.coordinator.api.update_device(self._puid, props)
-        await self.coordinator.async_request_refresh()
+                overrides["t_fan_speed"] = int(fan_val)
+        await self._async_update(overrides)
 
     async def async_turn_off(self, **kwargs: Any) -> None:
-        await self.coordinator.api.update_device(self._puid, {"t_power": 0})
-        await self.coordinator.async_request_refresh()
+        await self._async_update({"t_power": 0})
 
     async def async_set_percentage(self, percentage: int) -> None:
         if percentage == 0:
@@ -157,17 +155,18 @@ class ConnectLifeFan(CoordinatorEntity[ConnectLifeCoordinator], FanEntity):
         if fan_val is None:
             _LOGGER.warning("Unknown fan speed for percentage %s", percentage)
             return
-        await self.coordinator.api.update_device(
-            self._puid, {"t_power": 1, "t_fan_speed": int(fan_val)}
-        )
-        await self.coordinator.async_request_refresh()
+        await self._async_update({"t_power": 1, "t_fan_speed": int(fan_val)})
 
     async def async_set_preset_mode(self, preset_mode: str) -> None:
         fan_val = self._fan_options.get(preset_mode)
         if fan_val is None:
             _LOGGER.warning("Unknown fan preset mode: %s", preset_mode)
             return
-        await self.coordinator.api.update_device(
-            self._puid, {"t_power": 1, "t_fan_speed": int(fan_val)}
-        )
+        await self._async_update({"t_power": 1, "t_fan_speed": int(fan_val)})
+
+    async def _async_update(self, overrides: dict[str, Any]) -> None:
+        # Send the full current property set, not just the changed keys —
+        # ConnectLife's API can silently drop a bare partial update.
+        props = _build_full_properties(self._status(), overrides)
+        await self.coordinator.api.update_device(self._puid, props)
         await self.coordinator.async_request_refresh()
