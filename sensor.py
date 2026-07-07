@@ -18,9 +18,11 @@ from homeassistant.helpers.entity import DeviceInfo, EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.event import async_track_state_change_event
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
+from homeassistant.util.unit_conversion import TemperatureConverter
 
 from . import entry_config
 from .const import (
+    CONF_CURRENT_TEMP_ENTITY,
     CONF_MATTER_CLIMATE_ENTITY,
     CONF_MATTER_TEMPERATURE_SENSOR_ENTITY,
     CONF_TEMPERATURE_SENSORS,
@@ -43,6 +45,7 @@ async def async_setup_entry(
     temp_sensors_enabled = cfg.get(CONF_TEMPERATURE_SENSORS, False)
     matter_climate_entity = cfg.get(CONF_MATTER_CLIMATE_ENTITY)
     matter_temperature_sensor_entity = cfg.get(CONF_MATTER_TEMPERATURE_SENSOR_ENTITY)
+    current_temp_entity = cfg.get(CONF_CURRENT_TEMP_ENTITY)
 
     known_keys = {fd.key for fd in _STATUS_FIELDS}
 
@@ -89,6 +92,17 @@ async def async_setup_entry(
             entities.append(
                 ConnectLifeMatterTemperatureSensorMirror(
                     coordinator, puid, device, matter_temperature_sensor_entity
+                )
+            )
+
+        if matter_temperature_sensor_entity and current_temp_entity:
+            entities.append(
+                ConnectLifeMatterExternalTempDeltaSensor(
+                    coordinator,
+                    puid,
+                    device,
+                    matter_temperature_sensor_entity,
+                    current_temp_entity,
                 )
             )
 
@@ -460,6 +474,85 @@ class ConnectLifeMatterTemperatureSensorMirror(_ConnectLifeMatterMirrorSensor):
             return float(state.state)
         except (TypeError, ValueError):
             return None
+
+
+class ConnectLifeMatterExternalTempDeltaSensor(_ConnectLifeMatterMirrorSensor):
+    """Delta between "Matter Temperature (Sensor)" and the external temp sensor.
+
+    Both readings are converted to the system unit before subtracting, since
+    the two source entities can report in different units. Useful to spot
+    drift/calibration mismatch between what Matter and the external sensor
+    see as (presumably) the same room's temperature. Updates whenever either
+    source entity changes, not just the Matter side.
+    """
+
+    _attr_device_class = SensorDeviceClass.TEMPERATURE
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_suggested_display_precision = 1
+
+    def __init__(
+        self,
+        coordinator: ConnectLifeCoordinator,
+        puid: str,
+        device: dict[str, Any],
+        matter_temperature_sensor_entity: str,
+        external_temp_entity: str,
+    ) -> None:
+        super().__init__(coordinator, puid, device, matter_temperature_sensor_entity)
+        self._external_temp_entity = external_temp_entity
+        self._attr_unique_id = f"{puid}_matter_external_temp_delta"
+        self._attr_name = "Matter/External Temperature Delta"
+
+    async def async_added_to_hass(self) -> None:
+        """Track the Matter sensor (via the base class) and the external one."""
+        await super().async_added_to_hass()
+        self.async_on_remove(
+            async_track_state_change_event(
+                self.hass, [self._external_temp_entity], self._async_external_event
+            )
+        )
+
+    @callback
+    def _async_external_event(self, event: Any) -> None:
+        new_state = event.data.get("new_state")
+        _LOGGER.debug(
+            "[%s] %s: external temp entity %s changed to %s",
+            self._puid,
+            self.entity_id,
+            self._external_temp_entity,
+            new_state.state if new_state else None,
+        )
+        self.async_write_ha_state()
+
+    @property
+    def native_unit_of_measurement(self) -> str:
+        return self.hass.config.units.temperature_unit
+
+    def _read_temp(self, entity_id: str) -> float | None:
+        state = self.hass.states.get(entity_id)
+        if not state or state.state in ("unknown", "unavailable"):
+            return None
+        try:
+            value = float(state.state)
+        except (TypeError, ValueError):
+            return None
+        source_unit = state.attributes.get(
+            "unit_of_measurement", self.hass.config.units.temperature_unit
+        )
+        try:
+            return TemperatureConverter.convert(
+                value, source_unit, self.hass.config.units.temperature_unit
+            )
+        except (TypeError, ValueError):
+            return None
+
+    @property
+    def native_value(self) -> float | None:
+        matter_val = self._read_temp(self._matter_entity_id)
+        external_val = self._read_temp(self._external_temp_entity)
+        if matter_val is None or external_val is None:
+            return None
+        return round(matter_val - external_val, 2)
 
 
 class ConnectLifeMatterSetpointSensor(_ConnectLifeMatterMirrorSensor):
