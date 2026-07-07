@@ -1,0 +1,14 @@
+manifest.json
+  h_aceaeb4e74d6dc 2-4,6-7
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "3720bb38e8baf8ca2af5147f4fc5887cc57c90d2",
+  "prompts": {},
+  "humans": {
+    "h_aceaeb4e74d6dc": {
+      "author": "Claudio Spiess <claudiosv@users.noreply.github.com>"
+    }
+  }
+}
