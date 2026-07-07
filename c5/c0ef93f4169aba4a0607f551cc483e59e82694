@@ -1,0 +1,20 @@
+api.py
+  s_fac51dae4c7995::t_24565006ec4d5f 480
+  s_fac51dae4c7995::t_100fca487e73df 477
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "c5c0ef93f4169aba4a0607f551cc483e59e82694",
+  "prompts": {},
+  "sessions": {
+    "s_fac51dae4c7995": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "aec3261c-c36e-4749-abb3-f3953121a284",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "Claudio Spiess <claudiosv@users.noreply.github.com>"
+    }
+  }
+}
