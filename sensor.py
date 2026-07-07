@@ -257,8 +257,8 @@ class _FieldDef:
 
 _STATUS_FIELDS: list[_FieldDef] = [
     # Error / fault flags
-    _FieldDef("f_e_upmachine", "Upstream Machine Fault"),
-    _FieldDef("f_e_dwmachine", "Downstream Machine Fault"),
+    _FieldDef("f_e_upmachine", "Upper Machine Fault"),
+    _FieldDef("f_e_dwmachine", "Lower Machine Fault"),
     _FieldDef("f_e_intemp", "Indoor Temp Sensor Fault"),
     _FieldDef("f_e_incoiltemp", "Indoor Coil Temp Sensor Fault"),
     _FieldDef("f_e_outcoiltemp", "Outdoor Coil Temp Sensor Fault"),
