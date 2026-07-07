@@ -368,10 +368,20 @@ class ConnectLifeClimate(CoordinatorEntity[ConnectLifeCoordinator], ClimateEntit
         if "t_temp" in self._optimistic_status:
             val = self._optimistic_status["t_temp"]
             return float(val) if val is not None else None
-        if self._matter_climate_entity and self.hvac_mode == HVACMode.COOL:
-            val = self._matter_temperature("temperature")
-            if val is not None:
-                return val
+        if self._matter_climate_entity:
+            if self.hvac_mode == HVACMode.COOL:
+                val = self._matter_temperature("temperature")
+                if val is not None:
+                    return val
+            else:
+                _LOGGER.warning(
+                    "[%s] target_temperature: hvac_mode=%s is not COOL, skipping "
+                    "Matter entity %s and using ConnectLife t_temp=%r instead",
+                    self._puid,
+                    self.hvac_mode,
+                    self._matter_climate_entity,
+                    self._status().get("t_temp"),
+                )
         val = self._status().get("t_temp")
         return float(val) if val is not None else None
 
@@ -402,16 +412,42 @@ class ConnectLifeClimate(CoordinatorEntity[ConnectLifeCoordinator], ClimateEntit
             return None
         state = self.hass.states.get(self._matter_climate_entity)
         if not state or state.state in ("unknown", "unavailable"):
+            _LOGGER.warning(
+                "[%s] _matter_temperature(%s): Matter entity %s state is %s",
+                self._puid,
+                attr,
+                self._matter_climate_entity,
+                state.state if state else "missing",
+            )
             return None
         val = state.attributes.get(attr)
         if val is None:
+            _LOGGER.warning(
+                "[%s] _matter_temperature(%s): Matter entity %s has no '%s' "
+                "attribute; full attributes=%r",
+                self._puid,
+                attr,
+                self._matter_climate_entity,
+                attr,
+                dict(state.attributes),
+            )
             return None
         try:
-            return TemperatureConverter.convert(
-                float(val),
-                self.hass.config.units.temperature_unit,
-                self.temperature_unit,
+            ha_unit = self.hass.config.units.temperature_unit
+            our_unit = self.temperature_unit
+            converted = TemperatureConverter.convert(float(val), ha_unit, our_unit)
+            _LOGGER.warning(
+                "[%s] _matter_temperature(%s): raw=%r from %s (system unit=%s) "
+                "-> converted=%r in %s (our unit)",
+                self._puid,
+                attr,
+                val,
+                self._matter_climate_entity,
+                ha_unit,
+                converted,
+                our_unit,
             )
+            return converted
         except (TypeError, ValueError):
             return None
 
