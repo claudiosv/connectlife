@@ -11,6 +11,7 @@ CONF_EXTERNAL_TEMP_ENABLED = "external_temp_enabled"
 CONF_CURRENT_HUMIDITY_ENTITY = "current_humidity_entity"
 CONF_TARGET_HUMIDITY = "target_humidity"
 CONF_MATTER_CLIMATE_ENTITY = "matter_climate_entity"
+CONF_MATTER_SYNC_TIMEOUT = "matter_sync_timeout"
 CONF_TEMPERATURE_PRECISION = "temperature_precision"
 CONF_HUMIDITY_PRECISION = "humidity_precision"
 CONF_POLL_INTERVAL = "poll_interval"
@@ -23,6 +24,11 @@ TEMP_UNIT_FAHRENHEIT = "fahrenheit"
 UPDATE_INTERVAL_SECONDS = 60
 COMMAND_REFRESH_DELAY_SECONDS = 5  # seconds after a command before re-polling the cloud
 DEBOUNCE_DELAY_SECONDS = 3  # seconds of inactivity before batched commands are sent
+# How long to trust our own optimistic state after a Matter-redirected command
+# before giving up and accepting whatever ConnectLife reports, even if it
+# still disagrees (ConnectLife's cloud can be slow to learn about a change
+# made directly on the Matter side).
+MATTER_SYNC_TIMEOUT_SECONDS = 60
 TOKEN_CACHE_SECONDS = 86400  # 24 hours
 ENERGY_CACHE_SECONDS = 600  # 10 minutes
 

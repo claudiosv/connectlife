@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import time
 from typing import TYPE_CHECKING, Any
 
 from homeassistant.components.climate import (
@@ -37,11 +38,13 @@ from .const import (
     CONF_EXTERNAL_TEMP_ENABLED,
     CONF_HUMIDITY_PRECISION,
     CONF_MATTER_CLIMATE_ENTITY,
+    CONF_MATTER_SYNC_TIMEOUT,
     CONF_TARGET_HUMIDITY,
     CONF_TEMPERATURE_PRECISION,
     DEBOUNCE_DELAY_SECONDS,
     DEFAULT_DEVICES_CONFIG,
     DOMAIN,
+    MATTER_SYNC_TIMEOUT_SECONDS,
     TEMP_CODE_CELSIUS,
     TEMP_CODE_FAHRENHEIT,
 )
@@ -114,6 +117,9 @@ async def async_setup_entry(
     current_humidity_entity = cfg.get(CONF_CURRENT_HUMIDITY_ENTITY)
     target_humidity = cfg.get(CONF_TARGET_HUMIDITY)
     matter_climate_entity = cfg.get(CONF_MATTER_CLIMATE_ENTITY)
+    matter_sync_timeout = float(
+        cfg.get(CONF_MATTER_SYNC_TIMEOUT, MATTER_SYNC_TIMEOUT_SECONDS)
+    )
     temperature_precision = cfg.get(CONF_TEMPERATURE_PRECISION)
     humidity_precision = cfg.get(CONF_HUMIDITY_PRECISION)
     command_refresh_delay = int(
@@ -137,6 +143,7 @@ async def async_setup_entry(
             matter_climate_entity,
             temperature_precision,
             humidity_precision,
+            matter_sync_timeout,
         )
         for puid, device in coordinator.data.items()
     ]
@@ -244,6 +251,7 @@ class ConnectLifeClimate(CoordinatorEntity[ConnectLifeCoordinator], ClimateEntit
         matter_climate_entity: str | None = None,
         temperature_precision: int | None = None,
         humidity_precision: int | None = None,
+        matter_sync_timeout: float = MATTER_SYNC_TIMEOUT_SECONDS,
     ) -> None:
         super().__init__(coordinator)
         self._puid = puid
@@ -254,6 +262,7 @@ class ConnectLifeClimate(CoordinatorEntity[ConnectLifeCoordinator], ClimateEntit
         self._debounce_delay = debounce_delay
         self._current_humidity_entity = current_humidity_entity
         self._matter_climate_entity = matter_climate_entity
+        self._matter_sync_timeout = matter_sync_timeout
         self._temperature_precision = temperature_precision
         self._humidity_precision = humidity_precision
         self._target_humidity = (
@@ -266,6 +275,10 @@ class ConnectLifeClimate(CoordinatorEntity[ConnectLifeCoordinator], ClimateEntit
             float(raw_temp) if raw_temp is not None else None
         )
         self._optimistic_status: dict[str, Any] = {}
+        # Monotonic timestamp each optimistic key was last set — used to keep
+        # trusting our own guess until ConnectLife's data confirms it, up to
+        # _matter_sync_timeout, rather than clearing on every coordinator poll.
+        self._optimistic_set_at: dict[str, float] = {}
         self._pending_overrides: dict[str, Any] = {}
         self._debounce_task: asyncio.Task | None = None
 
@@ -355,9 +368,30 @@ class ConnectLifeClimate(CoordinatorEntity[ConnectLifeCoordinator], ClimateEntit
             return {**base, **self._optimistic_status}
         return base
 
+    def _set_optimistic(self, overrides: dict[str, Any]) -> None:
+        """Apply an optimistic override and record when each key was set."""
+        now = time.monotonic()
+        self._optimistic_status.update(overrides)
+        self._optimistic_set_at.update(dict.fromkeys(overrides, now))
+
     @callback
     def _handle_coordinator_update(self) -> None:
-        self._optimistic_status.clear()
+        # Keep trusting an optimistic key until ConnectLife's own data confirms
+        # it, or _matter_sync_timeout elapses — rather than clearing on every
+        # poll, which would revert a Matter-redirected change back to stale
+        # ConnectLife data before its cloud has caught up with the physical
+        # device (that sync can lag well past one poll cycle).
+        if self._optimistic_status:
+            fresh = self._device().get("statusList", {})
+            now = time.monotonic()
+            for key, val in list(self._optimistic_status.items()):
+                confirmed = str(fresh.get(key)) == str(val)
+                expired = (
+                    now - self._optimistic_set_at.get(key, 0)
+                ) > self._matter_sync_timeout
+                if confirmed or expired:
+                    self._optimistic_status.pop(key, None)
+                    self._optimistic_set_at.pop(key, None)
         super()._handle_coordinator_update()
 
     @property
@@ -714,7 +748,7 @@ class ConnectLifeClimate(CoordinatorEntity[ConnectLifeCoordinator], ClimateEntit
             elif hvac_mode == HVACMode.DRY:
                 overrides["t_super"] = 0
 
-        self._optimistic_status.update(overrides)
+        self._set_optimistic(overrides)
         self.async_write_ha_state()
 
         if self._matter_climate_entity and hvac_mode in _MATTER_SUPPORTED_MODES:
@@ -734,13 +768,6 @@ class ConnectLifeClimate(CoordinatorEntity[ConnectLifeCoordinator], ClimateEntit
                 )
                 self._enqueue(overrides)
             else:
-                # Also tell ConnectLife's own cloud directly instead of relying
-                # on it picking up the Matter-driven change on its own — that
-                # sync can lag (or not happen), and a premature scheduled poll
-                # would otherwise clear our optimistic state back to stale data.
-                await self.coordinator.api.update_device(
-                    self._puid, self._build_properties(overrides)
-                )
                 self._schedule_refresh()
         else:
             self._enqueue(overrides)
@@ -763,7 +790,7 @@ class ConnectLifeClimate(CoordinatorEntity[ConnectLifeCoordinator], ClimateEntit
             await self._async_control()
         elif self._matter_climate_entity and self.hvac_mode == HVACMode.COOL:
             overrides = {"t_temp": int(temp)}
-            self._optimistic_status.update(overrides)
+            self._set_optimistic(overrides)
             self.async_write_ha_state()
             matter_temp = self._clamp_for_matter(float(temp))
             try:
@@ -787,15 +814,10 @@ class ConnectLifeClimate(CoordinatorEntity[ConnectLifeCoordinator], ClimateEntit
                 )
                 self._enqueue(overrides)
             else:
-                # See async_set_hvac_mode: also tell ConnectLife directly so a
-                # premature scheduled poll doesn't revert our optimistic state.
-                await self.coordinator.api.update_device(
-                    self._puid, self._build_properties(overrides)
-                )
                 self._schedule_refresh()
         else:
             overrides = {"t_temp": int(temp)}
-            self._optimistic_status.update(overrides)
+            self._set_optimistic(overrides)
             self.async_write_ha_state()
             self._enqueue(overrides)
 
@@ -834,7 +856,7 @@ class ConnectLifeClimate(CoordinatorEntity[ConnectLifeCoordinator], ClimateEntit
         if auto_val is not None and fan_val != auto_val:
             if int(self._status().get("t_sleep", 0)) == 1:
                 overrides["t_sleep"] = 0
-        self._optimistic_status.update(overrides)
+        self._set_optimistic(overrides)
         self.async_write_ha_state()
         self._enqueue(overrides)
 
@@ -851,7 +873,7 @@ class ConnectLifeClimate(CoordinatorEntity[ConnectLifeCoordinator], ClimateEntit
             }
         else:  # up_down
             overrides = {"t_up_down": int(swing_vals["t_up_down"])}
-        self._optimistic_status.update(overrides)
+        self._set_optimistic(overrides)
         self.async_write_ha_state()
         self._enqueue(overrides)
 
@@ -881,14 +903,14 @@ class ConnectLifeClimate(CoordinatorEntity[ConnectLifeCoordinator], ClimateEntit
                 overrides["t_fan_speed"] = int(auto_val)
         elif preset_mode == PRESET_BOOST:
             overrides["t_super"] = 1
-        self._optimistic_status.update(overrides)
+        self._set_optimistic(overrides)
         self.async_write_ha_state()
         self._enqueue(overrides)
 
     async def async_turn_on(self) -> None:
         """Turn the AC on."""
         overrides: dict[str, Any] = {"t_power": 1}
-        self._optimistic_status.update(overrides)
+        self._set_optimistic(overrides)
         self.async_write_ha_state()
         self._enqueue(overrides)
 
@@ -937,6 +959,7 @@ class ConnectLifeClimate(CoordinatorEntity[ConnectLifeCoordinator], ClimateEntit
         # on the Matter side (not through this entity) isn't shadowed by a
         # stale guess until ConnectLife's next poll clears it.
         self._optimistic_status.pop("t_temp", None)
+        self._optimistic_set_at.pop("t_temp", None)
         self.async_write_ha_state()
 
     async def _async_control(self) -> None:

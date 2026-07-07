@@ -37,6 +37,7 @@ from .const import (
     CONF_EXTERNAL_TEMP_ENABLED,
     CONF_HUMIDITY_PRECISION,
     CONF_MATTER_CLIMATE_ENTITY,
+    CONF_MATTER_SYNC_TIMEOUT,
     CONF_POLL_INTERVAL,
     CONF_TARGET_HUMIDITY,
     CONF_TEMPERATURE_PRECISION,
@@ -44,6 +45,7 @@ from .const import (
     CONF_TEMPERATURE_UNIT,
     DEBOUNCE_DELAY_SECONDS,
     DOMAIN,
+    MATTER_SYNC_TIMEOUT_SECONDS,
     TEMP_UNIT_CELSIUS,
     TEMP_UNIT_FAHRENHEIT,
     UPDATE_INTERVAL_SECONDS,
@@ -154,6 +156,18 @@ def _options_schema(current: dict[str, Any]) -> vol.Schema:
             description={"suggested_value": current.get(CONF_MATTER_CLIMATE_ENTITY)},
         ): EntitySelector(
             EntitySelectorConfig(domain="climate", integration="matter", multiple=False)
+        ),
+        vol.Optional(
+            CONF_MATTER_SYNC_TIMEOUT,
+            default=current.get(CONF_MATTER_SYNC_TIMEOUT, MATTER_SYNC_TIMEOUT_SECONDS),
+        ): NumberSelector(
+            NumberSelectorConfig(
+                min=5,
+                max=300,
+                step=5,
+                mode=NumberSelectorMode.BOX,
+                unit_of_measurement="s",
+            )
         ),
         vol.Optional(
             CONF_TEMPERATURE_PRECISION,
@@ -341,6 +355,9 @@ class ConnectLifeOptionsFlow(OptionsFlow):
                             CONF_TARGET_HUMIDITY: user_input.get(CONF_TARGET_HUMIDITY),
                             CONF_MATTER_CLIMATE_ENTITY: user_input.get(
                                 CONF_MATTER_CLIMATE_ENTITY
+                            ),
+                            CONF_MATTER_SYNC_TIMEOUT: user_input.get(
+                                CONF_MATTER_SYNC_TIMEOUT, MATTER_SYNC_TIMEOUT_SECONDS
                             ),
                             CONF_TEMPERATURE_PRECISION: user_input.get(
                                 CONF_TEMPERATURE_PRECISION
