@@ -1060,16 +1060,30 @@ class ConnectLifeClimate(CoordinatorEntity[ConnectLifeCoordinator], ClimateEntit
                     api_temp = _THERMOSTAT_COOL_F if is_f else _THERMOSTAT_COOL_C
                 else:
                     api_temp = _THERMOSTAT_IDLE_F if is_f else _THERMOSTAT_IDLE_C
-                _LOGGER.debug(
-                    "[%s] Thermostat: sensor=%.1f target=%.1f -> forcing t_temp=%s",
-                    self._puid,
-                    current_temp,
-                    self._target_room_temp,
-                    api_temp,
-                )
-                await self.coordinator.api.update_device(
-                    self._puid, {"t_temp": api_temp}
-                )
+                try:
+                    device_temp = int(self._status().get("t_temp", -1))
+                except (TypeError, ValueError):
+                    device_temp = -1
+                if device_temp == api_temp:
+                    _LOGGER.debug(
+                        "[%s] Thermostat: sensor=%.1f target=%.1f -> already at "
+                        "t_temp=%s, skipping",
+                        self._puid,
+                        current_temp,
+                        self._target_room_temp,
+                        api_temp,
+                    )
+                else:
+                    _LOGGER.debug(
+                        "[%s] Thermostat: sensor=%.1f target=%.1f -> forcing t_temp=%s",
+                        self._puid,
+                        current_temp,
+                        self._target_room_temp,
+                        api_temp,
+                    )
+                    await self.coordinator.api.update_device(
+                        self._puid, {"t_temp": api_temp}
+                    )
 
         # --- Dry-mode humidity control ---
         if (
