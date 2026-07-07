@@ -23,6 +23,7 @@ from homeassistant.core import callback
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.event import async_track_state_change_event
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
+from homeassistant.util.unit_conversion import TemperatureConverter
 
 from . import entry_config
 from .const import (
@@ -368,14 +369,9 @@ class ConnectLifeClimate(CoordinatorEntity[ConnectLifeCoordinator], ClimateEntit
             val = self._optimistic_status["t_temp"]
             return float(val) if val is not None else None
         if self._matter_climate_entity and self.hvac_mode == HVACMode.COOL:
-            state = self.hass.states.get(self._matter_climate_entity)
-            if state and state.state not in ("unknown", "unavailable"):
-                val = state.attributes.get("temperature")
-                if val is not None:
-                    try:
-                        return float(val)
-                    except (TypeError, ValueError):
-                        pass
+            val = self._matter_temperature("temperature")
+            if val is not None:
+                return val
         val = self._status().get("t_temp")
         return float(val) if val is not None else None
 
@@ -389,16 +385,35 @@ class ConnectLifeClimate(CoordinatorEntity[ConnectLifeCoordinator], ClimateEntit
                 except ValueError:
                     pass
         if self._matter_climate_entity:
-            state = self.hass.states.get(self._matter_climate_entity)
-            if state and state.state not in ("unknown", "unavailable"):
-                val = state.attributes.get("current_temperature")
-                if val is not None:
-                    try:
-                        return float(val)
-                    except (TypeError, ValueError):
-                        pass
+            val = self._matter_temperature("current_temperature")
+            if val is not None:
+                return val
         val = self._status().get("f_temp_in")
         return float(val) if val is not None else None
+
+    def _matter_temperature(self, attr: str) -> float | None:
+        """Read a temperature attribute off the linked Matter entity.
+
+        Climate entities' current/target temperature attributes are reported
+        in Home Assistant's system-wide unit, not the entity's own native
+        unit — convert to our own temperature_unit before using the value.
+        """
+        if not self._matter_climate_entity:
+            return None
+        state = self.hass.states.get(self._matter_climate_entity)
+        if not state or state.state in ("unknown", "unavailable"):
+            return None
+        val = state.attributes.get(attr)
+        if val is None:
+            return None
+        try:
+            return TemperatureConverter.convert(
+                float(val),
+                self.hass.config.units.temperature_unit,
+                self.temperature_unit,
+            )
+        except (TypeError, ValueError):
+            return None
 
     @property
     def current_humidity(self) -> float | None:

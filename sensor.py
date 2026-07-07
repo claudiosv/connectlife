@@ -346,7 +346,10 @@ class ConnectLifeMatterTemperatureSensor(_ConnectLifeMatterMirrorSensor):
 
     @property
     def native_unit_of_measurement(self) -> str:
-        return _temp_unit(self._status())
+        # Climate entities report current/target temperature in HA's
+        # system-wide unit, not necessarily this ConnectLife device's own
+        # t_temp_type — label it with the unit the raw value is actually in.
+        return self.hass.config.units.temperature_unit
 
     @property
     def native_value(self) -> float | None:
@@ -379,7 +382,7 @@ class ConnectLifeMatterSetpointSensor(_ConnectLifeMatterMirrorSensor):
 
     @property
     def native_unit_of_measurement(self) -> str:
-        return _temp_unit(self._status())
+        return self.hass.config.units.temperature_unit
 
     @property
     def native_value(self) -> float | None:
