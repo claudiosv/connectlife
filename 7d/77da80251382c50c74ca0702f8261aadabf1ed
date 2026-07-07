@@ -1,0 +1,22 @@
+sensor.py
+  s_fac51dae4c7995::t_746612a93e430b 21,25
+  s_fac51dae4c7995::t_a54a9481d12a37 479-557
+  s_fac51dae4c7995::t_5575d4d7731217 48
+  s_fac51dae4c7995::t_651ad14d057081 98-108
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "7d77da80251382c50c74ca0702f8261aadabf1ed",
+  "prompts": {},
+  "sessions": {
+    "s_fac51dae4c7995": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "aec3261c-c36e-4749-abb3-f3953121a284",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "Claudio Spiess <claudiosv@users.noreply.github.com>"
+    }
+  }
+}
