@@ -265,6 +265,7 @@ _STATUS_FIELDS: list[_FieldDef] = [
     ),
     # Device / Matter info
     _FieldDef("f_matterOriginalVendorId", "Matter Vendor ID"),
+    _FieldDef("f_matterOriginalProductId", "Matter Product ID"),
     _FieldDef("f_matterUniqueId", "Matter Unique ID"),
 ]
 

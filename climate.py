@@ -81,12 +81,16 @@ _MATTER_SUPPORTED_MODES = {
     HVACMode.OFF,
 }
 
-# The Matter entity's own min/max — our Fahrenheit bounds (61/90) are rounded
-# for display and don't convert back to exactly 16.0/32.0°C, so a value at our
-# max can overshoot Matter's real ceiling once HA converts it (e.g. 90°F ->
-# 32.222°C > 32.0). Clamp to these before sending.
+# Fallback Matter min/max (°C) used only if the linked entity's own min_temp/
+# max_temp attributes aren't available.
 _MATTER_MIN_TEMP_C = 16.0
 _MATTER_MAX_TEMP_C = 32.0
+
+# Matter's reported min_temp/max_temp are themselves rounded for display
+# (e.g. a true 32.0°C ceiling shows as 90°F, not 89.6), so a value sent right
+# at that boundary can still overshoot the device's real limit once HA
+# converts it back. Nudge inward by this much (in system unit) as a margin.
+_MATTER_BOUND_SAFETY_MARGIN = 0.5
 
 
 async def async_setup_entry(
@@ -463,26 +467,43 @@ class ConnectLifeClimate(CoordinatorEntity[ConnectLifeCoordinator], ClimateEntit
             return None
 
     def _clamp_for_matter(self, temp: float) -> float:
-        """Convert to system unit and nudge away from Matter's own min/max.
+        """Convert to system unit and clamp within the Matter entity's own bounds.
 
         climate.set_temperature converts the given value from HA's
-        system-wide unit to the target entity's own unit. Our own
-        Fahrenheit bounds (61/90) are rounded for display and don't convert
-        back to exactly Matter's 16.0/32.0°C, so a value at our max can
-        overshoot once HA does that conversion (e.g. 90°F -> 32.222°C).
+        system-wide unit to the target entity's own unit before validating
+        it against the entity's min/max. We read those bounds directly off
+        the linked Matter entity (falling back to a hardcoded guess if
+        unavailable) rather than assuming our own rounded Fahrenheit limits
+        round-trip exactly — they don't (90°F -> 32.222°C overshoots a true
+        32.0°C ceiling).
         """
         system_unit = self.hass.config.units.temperature_unit
         system_temp = TemperatureConverter.convert(
             temp, self.temperature_unit, system_unit
         )
-        celsius = TemperatureConverter.convert(
-            system_temp, system_unit, UnitOfTemperature.CELSIUS
+        state = (
+            self.hass.states.get(self._matter_climate_entity)
+            if self._matter_climate_entity
+            else None
         )
-        clamped_celsius = min(max(celsius, _MATTER_MIN_TEMP_C), _MATTER_MAX_TEMP_C)
-        if clamped_celsius == celsius:
-            return system_temp
+        max_bound = self._matter_bound(state, "max_temp", system_unit, is_max=True)
+        min_bound = self._matter_bound(state, "min_temp", system_unit, is_max=False)
+        return min(max(system_temp, min_bound), max_bound)
+
+    def _matter_bound(
+        self, state: Any, attr: str, system_unit: str, *, is_max: bool
+    ) -> float:
+        """Read min_temp/max_temp off a Matter state, nudged inward as a safety margin."""
+        raw = state.attributes.get(attr) if state else None
+        if raw is not None:
+            try:
+                bound = float(raw)
+                return bound - _MATTER_BOUND_SAFETY_MARGIN if is_max else bound + _MATTER_BOUND_SAFETY_MARGIN
+            except (TypeError, ValueError):
+                pass
+        fallback_c = _MATTER_MAX_TEMP_C if is_max else _MATTER_MIN_TEMP_C
         return TemperatureConverter.convert(
-            clamped_celsius, UnitOfTemperature.CELSIUS, system_unit
+            fallback_c, UnitOfTemperature.CELSIUS, system_unit
         )
 
     def _sensor_temperature(self, entity_id: str) -> float | None:
