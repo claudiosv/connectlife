@@ -26,6 +26,8 @@ _LOGGER = logging.getLogger(__name__)
 
 # Not a discrete speed step — kept as a separate preset instead of a percentage.
 _AUTO_SLUG = "auto"
+# Explicit "no preset" option — selecting it (or a manual speed) leaves auto.
+_NONE_SLUG = "none"
 
 
 async def async_setup_entry(
@@ -96,7 +98,7 @@ class ConnectLifeFan(CoordinatorEntity[ConnectLifeCoordinator], FanEntity):
             self._attr_speed_count = len(self._named_speeds)
         if _AUTO_SLUG in fan_options:
             features |= FanEntityFeature.PRESET_MODE
-            self._attr_preset_modes = [_AUTO_SLUG]
+            self._attr_preset_modes = [_NONE_SLUG, _AUTO_SLUG]
         self._attr_supported_features = features
 
     @property
@@ -143,8 +145,10 @@ class ConnectLifeFan(CoordinatorEntity[ConnectLifeCoordinator], FanEntity):
 
     @property
     def preset_mode(self) -> str | None:
+        if _AUTO_SLUG not in self._fan_options:
+            return None
         name = self._current_speed_name()
-        return name if name == _AUTO_SLUG else None
+        return _AUTO_SLUG if name == _AUTO_SLUG else _NONE_SLUG
 
     async def async_turn_on(
         self,
@@ -161,10 +165,14 @@ class ConnectLifeFan(CoordinatorEntity[ConnectLifeCoordinator], FanEntity):
         overrides: dict[str, Any] = {"t_power": 1}
         self._optimistic_power = True
         if preset_mode is not None:
-            fan_val = self._fan_options.get(preset_mode)
+            if preset_mode == _NONE_SLUG:
+                fan_name = self._named_speeds[0] if self._named_speeds else None
+            else:
+                fan_name = preset_mode
+            fan_val = self._fan_options.get(fan_name) if fan_name else None
             if fan_val is not None:
                 overrides["t_fan_speed"] = int(fan_val)
-                self._optimistic_speed_name = preset_mode
+                self._optimistic_speed_name = fan_name
         elif percentage is not None:
             name = percentage_to_ordered_list_item(self._named_speeds, percentage)
             fan_val = self._fan_options.get(name)
@@ -197,12 +205,21 @@ class ConnectLifeFan(CoordinatorEntity[ConnectLifeCoordinator], FanEntity):
 
     async def async_set_preset_mode(self, preset_mode: str) -> None:
         _LOGGER.debug("[%s] async_set_preset_mode(%r)", self._puid, preset_mode)
-        fan_val = self._fan_options.get(preset_mode)
+        if preset_mode == _NONE_SLUG:
+            # "None" isn't a real speed — leave auto for the lowest manual
+            # speed instead of a no-op.
+            if not self._named_speeds:
+                _LOGGER.warning("No named speeds available to fall back to from 'none'")
+                return
+            fan_name = self._named_speeds[0]
+        else:
+            fan_name = preset_mode
+        fan_val = self._fan_options.get(fan_name)
         if fan_val is None:
             _LOGGER.warning("Unknown fan preset mode: %s", preset_mode)
             return
         self._optimistic_power = True
-        self._optimistic_speed_name = preset_mode
+        self._optimistic_speed_name = fan_name
         self.async_write_ha_state()
         await self._async_update({"t_power": 1, "t_fan_speed": int(fan_val)})
 
