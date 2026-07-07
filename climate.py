@@ -81,6 +81,13 @@ _MATTER_SUPPORTED_MODES = {
     HVACMode.OFF,
 }
 
+# The Matter entity's own min/max — our Fahrenheit bounds (61/90) are rounded
+# for display and don't convert back to exactly 16.0/32.0°C, so a value at our
+# max can overshoot Matter's real ceiling once HA converts it (e.g. 90°F ->
+# 32.222°C > 32.0). Clamp to these before sending.
+_MATTER_MIN_TEMP_C = 16.0
+_MATTER_MAX_TEMP_C = 32.0
+
 
 async def async_setup_entry(
     hass: HomeAssistant,
@@ -455,6 +462,29 @@ class ConnectLifeClimate(CoordinatorEntity[ConnectLifeCoordinator], ClimateEntit
         except (TypeError, ValueError):
             return None
 
+    def _clamp_for_matter(self, temp: float) -> float:
+        """Convert to system unit and nudge away from Matter's own min/max.
+
+        climate.set_temperature converts the given value from HA's
+        system-wide unit to the target entity's own unit. Our own
+        Fahrenheit bounds (61/90) are rounded for display and don't convert
+        back to exactly Matter's 16.0/32.0°C, so a value at our max can
+        overshoot once HA does that conversion (e.g. 90°F -> 32.222°C).
+        """
+        system_unit = self.hass.config.units.temperature_unit
+        system_temp = TemperatureConverter.convert(
+            temp, self.temperature_unit, system_unit
+        )
+        celsius = TemperatureConverter.convert(
+            system_temp, system_unit, UnitOfTemperature.CELSIUS
+        )
+        clamped_celsius = min(max(celsius, _MATTER_MIN_TEMP_C), _MATTER_MAX_TEMP_C)
+        if clamped_celsius == celsius:
+            return system_temp
+        return TemperatureConverter.convert(
+            clamped_celsius, UnitOfTemperature.CELSIUS, system_unit
+        )
+
     def _sensor_temperature(self, entity_id: str) -> float | None:
         """Read a plain sensor entity's temperature, converted to our own unit.
 
@@ -707,18 +737,24 @@ class ConnectLifeClimate(CoordinatorEntity[ConnectLifeCoordinator], ClimateEntit
             overrides = {"t_temp": int(temp)}
             self._optimistic_status.update(overrides)
             self.async_write_ha_state()
+            matter_temp = self._clamp_for_matter(float(temp))
             try:
                 await self.hass.services.async_call(
                     "climate",
                     "set_temperature",
-                    {"entity_id": self._matter_climate_entity, "temperature": temp},
+                    {
+                        "entity_id": self._matter_climate_entity,
+                        "temperature": matter_temp,
+                    },
                     blocking=True,
                 )
             except Exception:
                 _LOGGER.warning(
-                    "Failed to set temperature on Matter entity %s, falling back to "
-                    "ConnectLife API",
+                    "Failed to set temperature on Matter entity %s (sent %r, "
+                    "originally %r), falling back to ConnectLife API",
                     self._matter_climate_entity,
+                    matter_temp,
+                    temp,
                     exc_info=True,
                 )
                 self._enqueue(overrides)
