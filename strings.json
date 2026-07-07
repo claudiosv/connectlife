@@ -10,6 +10,7 @@
           "temperature_sensors": "Create separate temperature sensor entities",
           "current_temperature_entity": "External temperature sensor (overrides AC reading)",
           "current_humidity_entity": "External humidity sensor (overrides AC reading)",
+          "matter_climate_entity": "Hisense Matter AC (used for current/target temperature and mode when available)",
           "devices_config": "Device configuration (JSON)"
         }
       }

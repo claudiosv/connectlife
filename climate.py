@@ -34,6 +34,7 @@ from .const import (
     CONF_DEBOUNCE_DELAY,
     CONF_DEVICES_CONFIG,
     CONF_EXTERNAL_TEMP_ENABLED,
+    CONF_MATTER_CLIMATE_ENTITY,
     CONF_TARGET_HUMIDITY,
     DEBOUNCE_DELAY_SECONDS,
     DEFAULT_DEVICES_CONFIG,
@@ -69,6 +70,14 @@ _HA_MODE_MAP: dict[str, HVACMode] = {
 }
 _CL_MODE_MAP: dict[HVACMode, str] = {v: k for k, v in _HA_MODE_MAP.items()}
 
+# HVAC modes the linked Matter climate entity is able to set directly.
+_MATTER_SUPPORTED_MODES = {
+    HVACMode.COOL,
+    HVACMode.DRY,
+    HVACMode.FAN_ONLY,
+    HVACMode.OFF,
+}
+
 
 async def async_setup_entry(
     hass: HomeAssistant,
@@ -90,6 +99,7 @@ async def async_setup_entry(
     external_temp_enabled = cfg.get(CONF_EXTERNAL_TEMP_ENABLED, True)
     current_humidity_entity = cfg.get(CONF_CURRENT_HUMIDITY_ENTITY)
     target_humidity = cfg.get(CONF_TARGET_HUMIDITY)
+    matter_climate_entity = cfg.get(CONF_MATTER_CLIMATE_ENTITY)
     command_refresh_delay = int(
         cfg.get(CONF_COMMAND_REFRESH_DELAY, COMMAND_REFRESH_DELAY_SECONDS)
     )
@@ -108,6 +118,7 @@ async def async_setup_entry(
             target_humidity,
             command_refresh_delay,
             debounce_delay,
+            matter_climate_entity,
         )
         for puid, device in coordinator.data.items()
     ]
@@ -212,6 +223,7 @@ class ConnectLifeClimate(CoordinatorEntity[ConnectLifeCoordinator], ClimateEntit
         target_humidity: float | None = None,
         command_refresh_delay: int = COMMAND_REFRESH_DELAY_SECONDS,
         debounce_delay: float = DEBOUNCE_DELAY_SECONDS,
+        matter_climate_entity: str | None = None,
     ) -> None:
         super().__init__(coordinator)
         self._puid = puid
@@ -221,6 +233,7 @@ class ConnectLifeClimate(CoordinatorEntity[ConnectLifeCoordinator], ClimateEntit
         self._command_refresh_delay = command_refresh_delay
         self._debounce_delay = debounce_delay
         self._current_humidity_entity = current_humidity_entity
+        self._matter_climate_entity = matter_climate_entity
         self._target_humidity = (
             float(target_humidity) if target_humidity is not None else None
         )
@@ -351,6 +364,18 @@ class ConnectLifeClimate(CoordinatorEntity[ConnectLifeCoordinator], ClimateEntit
             and self._target_room_temp is not None
         ):
             return self._target_room_temp
+        if "t_temp" in self._optimistic_status:
+            val = self._optimistic_status["t_temp"]
+            return float(val) if val is not None else None
+        if self._matter_climate_entity and self.hvac_mode == HVACMode.COOL:
+            state = self.hass.states.get(self._matter_climate_entity)
+            if state and state.state not in ("unknown", "unavailable"):
+                val = state.attributes.get("temperature")
+                if val is not None:
+                    try:
+                        return float(val)
+                    except (TypeError, ValueError):
+                        pass
         val = self._status().get("t_temp")
         return float(val) if val is not None else None
 
@@ -363,6 +388,15 @@ class ConnectLifeClimate(CoordinatorEntity[ConnectLifeCoordinator], ClimateEntit
                     return float(state.state)
                 except ValueError:
                     pass
+        if self._matter_climate_entity:
+            state = self.hass.states.get(self._matter_climate_entity)
+            if state and state.state not in ("unknown", "unavailable"):
+                val = state.attributes.get("current_temperature")
+                if val is not None:
+                    try:
+                        return float(val)
+                    except (TypeError, ValueError):
+                        pass
         val = self._status().get("f_temp_in")
         return float(val) if val is not None else None
 
@@ -556,7 +590,27 @@ class ConnectLifeClimate(CoordinatorEntity[ConnectLifeCoordinator], ClimateEntit
 
         self._optimistic_status.update(overrides)
         self.async_write_ha_state()
-        self._enqueue(overrides)
+
+        if self._matter_climate_entity and hvac_mode in _MATTER_SUPPORTED_MODES:
+            try:
+                await self.hass.services.async_call(
+                    "climate",
+                    "set_hvac_mode",
+                    {"entity_id": self._matter_climate_entity, "hvac_mode": hvac_mode},
+                    blocking=True,
+                )
+            except Exception:
+                _LOGGER.warning(
+                    "Failed to set HVAC mode on Matter entity %s, falling back to "
+                    "ConnectLife API",
+                    self._matter_climate_entity,
+                    exc_info=True,
+                )
+                self._enqueue(overrides)
+            else:
+                self._schedule_refresh()
+        else:
+            self._enqueue(overrides)
 
     async def async_set_temperature(self, **kwargs: Any) -> None:
         """Set target temperature."""
@@ -574,6 +628,27 @@ class ConnectLifeClimate(CoordinatorEntity[ConnectLifeCoordinator], ClimateEntit
             self._target_room_temp = float(temp)
             self.async_write_ha_state()
             await self._async_control()
+        elif self._matter_climate_entity and self.hvac_mode == HVACMode.COOL:
+            overrides = {"t_temp": int(temp)}
+            self._optimistic_status.update(overrides)
+            self.async_write_ha_state()
+            try:
+                await self.hass.services.async_call(
+                    "climate",
+                    "set_temperature",
+                    {"entity_id": self._matter_climate_entity, "temperature": temp},
+                    blocking=True,
+                )
+            except Exception:
+                _LOGGER.warning(
+                    "Failed to set temperature on Matter entity %s, falling back to "
+                    "ConnectLife API",
+                    self._matter_climate_entity,
+                    exc_info=True,
+                )
+                self._enqueue(overrides)
+            else:
+                self._schedule_refresh()
         else:
             overrides = {"t_temp": int(temp)}
             self._optimistic_status.update(overrides)
@@ -675,10 +750,7 @@ class ConnectLifeClimate(CoordinatorEntity[ConnectLifeCoordinator], ClimateEntit
 
     async def async_turn_off(self) -> None:
         """Turn the AC off."""
-        overrides: dict[str, Any] = {"t_power": 0}
-        self._optimistic_status.update(overrides)
-        self.async_write_ha_state()
-        self._enqueue(overrides)
+        await self.async_set_hvac_mode(HVACMode.OFF)
 
     # ------------------------------------------------------------------
     # External sensor tracking
@@ -700,11 +772,24 @@ class ConnectLifeClimate(CoordinatorEntity[ConnectLifeCoordinator], ClimateEntit
                     self._async_sensor_event,
                 )
             )
+        if self._matter_climate_entity:
+            self.async_on_remove(
+                async_track_state_change_event(
+                    self.hass,
+                    [self._matter_climate_entity],
+                    self._async_matter_event,
+                )
+            )
 
     @callback
     def _async_sensor_event(self, _event: Any) -> None:
         """Handle a state change on a tracked sensor entity."""
         self.hass.async_create_task(self._async_control())
+
+    @callback
+    def _async_matter_event(self, _event: Any) -> None:
+        """Push state immediately when the linked Matter entity updates."""
+        self.async_write_ha_state()
 
     async def _async_control(self) -> None:
         """Apply external-sensor thermostat and dry-mode humidity control."""

@@ -22,7 +22,13 @@ from .const import (
 )
 from .coordinator import ConnectLifeCoordinator
 
-PLATFORMS = [Platform.BUTTON, Platform.CLIMATE, Platform.SENSOR]
+PLATFORMS = [
+    Platform.BUTTON,
+    Platform.CLIMATE,
+    Platform.FAN,
+    Platform.SENSOR,
+    Platform.SWITCH,
+]
 
 
 def entry_config(entry: ConfigEntry) -> dict:
