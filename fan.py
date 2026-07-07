@@ -8,7 +8,7 @@ from typing import Any
 
 from homeassistant.components.fan import FanEntity, FanEntityFeature
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util.percentage import (
@@ -81,6 +81,12 @@ class ConnectLifeFan(CoordinatorEntity[ConnectLifeCoordinator], FanEntity):
         self._beeping = beeping
         self._attr_unique_id = f"{puid}_fan"
         self._attr_device_info = _device_info(device, puid, DOMAIN)
+        # ConnectLife's cloud can take a long time (observed up to 60-90s) to
+        # reflect a command in its own polled state — track our own desired
+        # state locally so the entity shows it instantly instead of stale
+        # data until the coordinator eventually catches up.
+        self._optimistic_power: bool | None = None
+        self._optimistic_speed_name: str | None = None
 
         self._named_speeds = [name for name in fan_options if name != _AUTO_SLUG]
 
@@ -104,7 +110,15 @@ class ConnectLifeFan(CoordinatorEntity[ConnectLifeCoordinator], FanEntity):
     def _status(self) -> dict[str, Any]:
         return self.coordinator.data.get(self._puid, {}).get("statusList", {})
 
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        self._optimistic_power = None
+        self._optimistic_speed_name = None
+        super()._handle_coordinator_update()
+
     def _current_speed_name(self) -> str | None:
+        if self._optimistic_speed_name is not None:
+            return self._optimistic_speed_name
         fan_val = str(self._status().get("t_fan_speed", ""))
         for name, api_val in self._fan_options.items():
             if api_val == fan_val:
@@ -113,6 +127,8 @@ class ConnectLifeFan(CoordinatorEntity[ConnectLifeCoordinator], FanEntity):
 
     @property
     def is_on(self) -> bool | None:
+        if self._optimistic_power is not None:
+            return self._optimistic_power
         val = self._status().get("t_power")
         if val is None:
             return None
@@ -143,19 +159,25 @@ class ConnectLifeFan(CoordinatorEntity[ConnectLifeCoordinator], FanEntity):
             preset_mode,
         )
         overrides: dict[str, Any] = {"t_power": 1}
+        self._optimistic_power = True
         if preset_mode is not None:
             fan_val = self._fan_options.get(preset_mode)
             if fan_val is not None:
                 overrides["t_fan_speed"] = int(fan_val)
+                self._optimistic_speed_name = preset_mode
         elif percentage is not None:
             name = percentage_to_ordered_list_item(self._named_speeds, percentage)
             fan_val = self._fan_options.get(name)
             if fan_val is not None:
                 overrides["t_fan_speed"] = int(fan_val)
+                self._optimistic_speed_name = name
+        self.async_write_ha_state()
         await self._async_update(overrides)
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         _LOGGER.debug("[%s] async_turn_off()", self._puid)
+        self._optimistic_power = False
+        self.async_write_ha_state()
         await self._async_update({"t_power": 0})
 
     async def async_set_percentage(self, percentage: int) -> None:
@@ -168,6 +190,9 @@ class ConnectLifeFan(CoordinatorEntity[ConnectLifeCoordinator], FanEntity):
         if fan_val is None:
             _LOGGER.warning("Unknown fan speed for percentage %s", percentage)
             return
+        self._optimistic_power = True
+        self._optimistic_speed_name = name
+        self.async_write_ha_state()
         await self._async_update({"t_power": 1, "t_fan_speed": int(fan_val)})
 
     async def async_set_preset_mode(self, preset_mode: str) -> None:
@@ -176,6 +201,9 @@ class ConnectLifeFan(CoordinatorEntity[ConnectLifeCoordinator], FanEntity):
         if fan_val is None:
             _LOGGER.warning("Unknown fan preset mode: %s", preset_mode)
             return
+        self._optimistic_power = True
+        self._optimistic_speed_name = preset_mode
+        self.async_write_ha_state()
         await self._async_update({"t_power": 1, "t_fan_speed": int(fan_val)})
 
     async def _async_update(self, overrides: dict[str, Any]) -> None:
