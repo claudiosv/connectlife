@@ -391,12 +391,17 @@ class ConnectLifeClimate(
     @property
     def supported_features(self) -> ClimateEntityFeature:
         mode = self.hvac_mode
+        boosting = self.preset_mode == PRESET_BOOST
         features = ClimateEntityFeature.TURN_ON | ClimateEntityFeature.TURN_OFF
-        # Temperature: not settable in auto, dry, or fan-only
-        if mode not in (HVACMode.AUTO, HVACMode.DRY, HVACMode.FAN_ONLY):
+        # Temperature: not settable in auto, dry, or fan-only, nor while
+        # Boost is holding its own forced setpoint.
+        if (
+            mode not in (HVACMode.AUTO, HVACMode.DRY, HVACMode.FAN_ONLY)
+            and not boosting
+        ):
             features |= ClimateEntityFeature.TARGET_TEMPERATURE
-        # Fan speed: not available in dry mode
-        if self._fan_options and mode != HVACMode.DRY:
+        # Fan speed: not available in dry mode, nor while Boost forces high.
+        if self._fan_options and mode != HVACMode.DRY and not boosting:
             features |= ClimateEntityFeature.FAN_MODE
         # Swing: available in all non-off modes
         if self._swing_options and mode != HVACMode.OFF:
@@ -907,6 +912,12 @@ class ConnectLifeClimate(
                 "Target temperature cannot be set in %s mode", self.hvac_mode
             )
             return
+        if self.preset_mode == PRESET_BOOST and temp != self.min_temp:
+            _LOGGER.warning(
+                "Target temperature is locked to %.1f while Boost preset is active",
+                self.min_temp,
+            )
+            return
         if self._current_temp_entity and self._external_temp_enabled:
             # External sensor mode: store desired room temp and let the thermostat
             # logic decide the actual API target.
@@ -969,6 +980,9 @@ class ConnectLifeClimate(
     async def async_set_fan_mode(self, fan_mode: str) -> None:
         """Set fan mode."""
         _LOGGER.debug("[%s] async_set_fan_mode(%r)", self._puid, fan_mode)
+        if self.preset_mode == PRESET_BOOST and fan_mode != "high":
+            _LOGGER.warning("Fan mode is locked to high while Boost preset is active")
+            return
         fan_val = self._fan_options.get(fan_mode)
         if fan_val is None:
             _LOGGER.warning("Unknown fan mode: %s", fan_mode)
@@ -1045,9 +1059,11 @@ class ConnectLifeClimate(
                 overrides["t_fan_speed"] = int(auto_val)
         elif preset_mode == PRESET_BOOST:
             overrides["t_super"] = 1
-            # Boost pushes the AC to work as hard as possible: coldest target
-            # temp, high fan, swing on.
-            overrides["t_temp"] = int(self.min_temp)
+            # Boost pushes the AC to work as hard as possible: high fan,
+            # swing on. Target temp is handled below via
+            # async_set_temperature, not a raw override here — a linked
+            # Matter entity owns the setpoint in COOL mode and a bare
+            # t_temp write wouldn't reach the physical unit.
             high_val = self._fan_options.get("high")
             if high_val is not None:
                 overrides["t_fan_speed"] = int(high_val)
@@ -1063,6 +1079,8 @@ class ConnectLifeClimate(
         self._set_optimistic(overrides)
         self.async_write_ha_state()
         self._enqueue(overrides)
+        if preset_mode == PRESET_BOOST:
+            await self.async_set_temperature(temperature=self.min_temp)
 
     async def async_turn_on(self) -> None:
         """Turn the AC on."""
@@ -1182,7 +1200,14 @@ class ConnectLifeClimate(
     async def _async_control(self) -> None:
         """Apply external-sensor thermostat and dry-mode humidity control."""
         # --- Temperature thermostat ---
-        if self._current_temp_entity and self._target_room_temp is not None:
+        # Boost forces its own temp/fan/swing directly — don't let the
+        # room-temp bang-bang loop fight it by re-forcing t_temp based on
+        # _target_room_temp while it's active.
+        if (
+            self.preset_mode != PRESET_BOOST
+            and self._current_temp_entity
+            and self._target_room_temp is not None
+        ):
             current_temp = self._sensor_temperature(self._current_temp_entity)
             if current_temp is not None:
                 if self._matter_climate_entity and self.hvac_mode == HVACMode.COOL:
