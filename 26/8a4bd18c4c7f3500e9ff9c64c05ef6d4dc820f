@@ -1,0 +1,19 @@
+climate.py
+  s_0260b6dbb953a4::t_2f7a8b71418c78 1048-1062
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "268a4bd18c4c7f3500e9ff9c64c05ef6d4dc820f",
+  "prompts": {},
+  "sessions": {
+    "s_0260b6dbb953a4": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "be7a1b49-424b-4542-a1f8-6b4cc64e58eb",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "Claudio Spiess <claudiosv@users.noreply.github.com>"
+    }
+  }
+}
