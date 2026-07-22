@@ -1045,6 +1045,21 @@ class ConnectLifeClimate(
                 overrides["t_fan_speed"] = int(auto_val)
         elif preset_mode == PRESET_BOOST:
             overrides["t_super"] = 1
+            # Boost pushes the AC to work as hard as possible: coldest target
+            # temp, high fan, swing on.
+            overrides["t_temp"] = int(self.min_temp)
+            high_val = self._fan_options.get("high")
+            if high_val is not None:
+                overrides["t_fan_speed"] = int(high_val)
+            swing_on = self._swing_options.get("on")
+            if swing_on is not None:
+                if swing_on["type"] == "directional":
+                    overrides["t_swing_direction"] = int(
+                        swing_on["t_swing_direction"]
+                    )
+                    overrides["t_swing_angle"] = int(swing_on["t_swing_angle"])
+                else:
+                    overrides["t_up_down"] = int(swing_on["t_up_down"])
         self._set_optimistic(overrides)
         self.async_write_ha_state()
         self._enqueue(overrides)
