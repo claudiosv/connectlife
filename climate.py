@@ -1004,10 +1004,10 @@ class ConnectLifeClimate(
                 return
             overrides["t_power"] = 1
             overrides["t_work_mode"] = int(self._mode_options[fallback])
-        # Selecting a non-auto fan speed while sleep is active violates the
-        # sleep constraint (sleep requires auto fan), so exit sleep mode.
-        auto_val = self._fan_options.get("auto")
-        if auto_val is not None and fan_val != auto_val:
+        # Selecting a non-low fan speed while sleep is active violates the
+        # sleep constraint (sleep requires low fan), so exit sleep mode.
+        low_val = self._fan_options.get("low")
+        if low_val is not None and fan_val != low_val:
             if int(self._status().get("t_sleep", 0)) == 1:
                 overrides["t_sleep"] = 0
         self._set_optimistic(overrides)
