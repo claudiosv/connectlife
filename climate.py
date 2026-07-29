@@ -391,7 +391,9 @@ class ConnectLifeClimate(
     @property
     def supported_features(self) -> ClimateEntityFeature:
         mode = self.hvac_mode
-        boosting = self.preset_mode == PRESET_BOOST
+        preset = self.preset_mode
+        boosting = preset == PRESET_BOOST
+        sleeping = preset == PRESET_SLEEP
         features = ClimateEntityFeature.TURN_ON | ClimateEntityFeature.TURN_OFF
         # Temperature: not settable in auto, dry, or fan-only, nor while
         # Boost is holding its own forced setpoint.
@@ -400,8 +402,9 @@ class ConnectLifeClimate(
             and not boosting
         ):
             features |= ClimateEntityFeature.TARGET_TEMPERATURE
-        # Fan speed: not available in dry mode, nor while Boost forces high.
-        if self._fan_options and mode != HVACMode.DRY and not boosting:
+        # Fan speed: not available in dry mode, nor while Boost forces high
+        # or Sleep forces low.
+        if self._fan_options and mode != HVACMode.DRY and not boosting and not sleeping:
             features |= ClimateEntityFeature.FAN_MODE
         # Swing: available in all non-off modes
         if self._swing_options and mode != HVACMode.OFF:
@@ -867,7 +870,7 @@ class ConnectLifeClimate(
         self.async_write_ha_state()
 
         if self._matter_climate_entity and hvac_mode in _MATTER_SUPPORTED_MODES:
-            _LOGGER.debug(
+            _LOGGER.info(
                 "[%s] Sending set_hvac_mode=%s to Matter entity %s",
                 self._puid,
                 hvac_mode,
@@ -934,7 +937,7 @@ class ConnectLifeClimate(
             self._set_optimistic(overrides)
             self.async_write_ha_state()
             matter_temp = self._clamp_for_matter(float(temp))
-            _LOGGER.debug(
+            _LOGGER.info(
                 "[%s] Sending set_temperature=%r (clamped from %r) to Matter entity %s",
                 self._puid,
                 matter_temp,
@@ -983,6 +986,9 @@ class ConnectLifeClimate(
         if self.preset_mode == PRESET_BOOST and fan_mode != "high":
             _LOGGER.warning("Fan mode is locked to high while Boost preset is active")
             return
+        if self.preset_mode == PRESET_SLEEP and fan_mode != "low":
+            _LOGGER.warning("Fan mode is locked to low while Sleep preset is active")
+            return
         fan_val = self._fan_options.get(fan_mode)
         if fan_val is None:
             _LOGGER.warning("Unknown fan mode: %s", fan_mode)
@@ -1004,12 +1010,6 @@ class ConnectLifeClimate(
                 return
             overrides["t_power"] = 1
             overrides["t_work_mode"] = int(self._mode_options[fallback])
-        # Selecting a non-low fan speed while sleep is active violates the
-        # sleep constraint (sleep requires low fan), so exit sleep mode.
-        low_val = self._fan_options.get("low")
-        if low_val is not None and fan_val != low_val:
-            if int(self._status().get("t_sleep", 0)) == 1:
-                overrides["t_sleep"] = 0
         self._set_optimistic(overrides)
         self.async_write_ha_state()
         self._enqueue(overrides)
@@ -1032,6 +1032,18 @@ class ConnectLifeClimate(
         self.async_write_ha_state()
         self._enqueue(overrides)
 
+    def _swing_on_overrides(self) -> dict[str, Any]:
+        """Build overrides that turn swing on, if the device has an "on" option."""
+        swing_on = self._swing_options.get("on")
+        if swing_on is None:
+            return {}
+        if swing_on["type"] == "directional":
+            return {
+                "t_swing_direction": int(swing_on["t_swing_direction"]),
+                "t_swing_angle": int(swing_on["t_swing_angle"]),
+            }
+        return {"t_up_down": int(swing_on["t_up_down"])}
+
     async def async_set_preset_mode(self, preset_mode: str) -> None:
         """Set preset mode."""
         _LOGGER.debug("[%s] async_set_preset_mode(%r)", self._puid, preset_mode)
@@ -1053,10 +1065,11 @@ class ConnectLifeClimate(
             overrides["t_fan_mute"] = 1
         elif preset_mode == PRESET_SLEEP:
             overrides["t_sleep"] = 1
-            # Sleep requires auto fan speed.
-            auto_val = self._fan_options.get("auto")
-            if auto_val is not None:
-                overrides["t_fan_speed"] = int(auto_val)
+            # Sleep requires low fan speed, swing on.
+            low_val = self._fan_options.get("low")
+            if low_val is not None:
+                overrides["t_fan_speed"] = int(low_val)
+            overrides.update(self._swing_on_overrides())
         elif preset_mode == PRESET_BOOST:
             overrides["t_super"] = 1
             # Boost pushes the AC to work as hard as possible: high fan,
@@ -1067,15 +1080,7 @@ class ConnectLifeClimate(
             high_val = self._fan_options.get("high")
             if high_val is not None:
                 overrides["t_fan_speed"] = int(high_val)
-            swing_on = self._swing_options.get("on")
-            if swing_on is not None:
-                if swing_on["type"] == "directional":
-                    overrides["t_swing_direction"] = int(
-                        swing_on["t_swing_direction"]
-                    )
-                    overrides["t_swing_angle"] = int(swing_on["t_swing_angle"])
-                else:
-                    overrides["t_up_down"] = int(swing_on["t_up_down"])
+            overrides.update(self._swing_on_overrides())
         self._set_optimistic(overrides)
         self.async_write_ha_state()
         self._enqueue(overrides)
@@ -1200,11 +1205,11 @@ class ConnectLifeClimate(
     async def _async_control(self) -> None:
         """Apply external-sensor thermostat and dry-mode humidity control."""
         # --- Temperature thermostat ---
-        # Boost forces its own temp/fan/swing directly — don't let the
-        # room-temp bang-bang loop fight it by re-forcing t_temp based on
-        # _target_room_temp while it's active.
+        # Any active preset (Eco, Sleep, Boost) manages its own temp/fan/
+        # swing directly — don't let the room-temp bang-bang loop fight it
+        # by re-forcing t_temp based on _target_room_temp while one is active.
         if (
-            self.preset_mode != PRESET_BOOST
+            self.preset_mode == PRESET_NONE
             and self._current_temp_entity
             and self._target_room_temp is not None
         ):
@@ -1306,7 +1311,7 @@ class ConnectLifeClimate(
             )
             return
         matter_temp = self._clamp_for_matter(target_temp)
-        _LOGGER.debug(
+        _LOGGER.info(
             "[%s] Thermostat (Matter): setting Matter target temp=%r (our target=%.1f)",
             self._puid,
             matter_temp,
@@ -1387,7 +1392,7 @@ class ConnectLifeClimate(
         Bypasses async_set_hvac_mode on purpose — that method would clear
         _dry_sticky, which is exactly what the dry/idle loop must not do.
         """
-        _LOGGER.debug(
+        _LOGGER.info(
             "[%s] Dry/idle control: setting Matter entity %s to %s",
             self._puid,
             self._matter_climate_entity,

@@ -521,6 +521,7 @@ class ConnectLifeApi:
             return []
 
         devices: list[dict[str, Any]] = response["deviceList"]
+        _LOGGER.info("Fetched status for %d device(s) from ConnectLife", len(devices))
 
         # for i, device in enumerate(devices):
         #     if i > 0:
@@ -549,10 +550,10 @@ class ConnectLifeApi:
         for device in all_devices:
             puid = device.get("puid", "unknown")
             if device.get("offlineState") == 0:
-                _LOGGER.info("Skipping offline device: %s", puid)
+                _LOGGER.debug("Skipping offline device: %s", puid)
                 continue
             if device.get("deviceTypeCode") not in AC_DEVICE_TYPE_CODES:
-                _LOGGER.info(
+                _LOGGER.debug(
                     "Skipping device %s with unsupported type: %s",
                     puid,
                     device.get("deviceTypeCode"),
