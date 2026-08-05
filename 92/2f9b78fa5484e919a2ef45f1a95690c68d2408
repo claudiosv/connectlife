@@ -1,0 +1,46 @@
+const.py
+  s_ecd09bf03ed26b::t_7deee202c00d0d 19
+  s_ecd09bf03ed26b::t_d8b5db45f31d1b 52-55
+strings.json
+  s_ecd09bf03ed26b::t_220f582e42b894 21
+switch.py
+  s_ecd09bf03ed26b::t_f088a66443c5bc 133-137,141
+translations/en.json
+  s_ecd09bf03ed26b::t_4a0c4f1aec80ae 21
+config_flow.py
+  s_ecd09bf03ed26b::t_30c279c377c8c1 46
+  s_ecd09bf03ed26b::t_9f36afc1639d25 225-237
+  s_ecd09bf03ed26b::t_30b1f1003d7f6e 61
+  s_ecd09bf03ed26b::t_5b57d0de1ca251 444-447
+  s_ecd09bf03ed26b::t_7e4a6e29aa9321 224
+climate.py
+  s_ecd09bf03ed26b::t_6bf985c194360f 358-364
+  s_ecd09bf03ed26b::t_e907bec70c339d 102-118
+  s_ecd09bf03ed26b::t_560922a89ad477 160-164
+  s_ecd09bf03ed26b::t_a18a41827d7e3b 491-497
+  s_ecd09bf03ed26b::t_6ecd368b41e991 387
+  s_ecd09bf03ed26b::t_320f3e91aee415 192
+  s_ecd09bf03ed26b::t_f1dba464087fcb 341
+  s_ecd09bf03ed26b::t_526b5c06d7f69b 521-528
+  s_ecd09bf03ed26b::t_8ef35ac16902e4 534
+  s_ecd09bf03ed26b::t_24a856a2833460 51,62
+  s_ecd09bf03ed26b::t_21d8f91cb7b6d5 542-548
+  s_ecd09bf03ed26b::t_c184f6ccb97cfa 1289-1297,1305-1326
+  s_ecd09bf03ed26b::t_a04725c68c4f5e 503-517
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "922f9b78fa5484e919a2ef45f1a95690c68d2408",
+  "prompts": {},
+  "sessions": {
+    "s_ecd09bf03ed26b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e9c44ec1-3a36-4e1e-8c0b-f0c6925e5f62",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "Claudio Spiess <claudiosv@users.noreply.github.com>"
+    }
+  }
+}
