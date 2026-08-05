@@ -20,6 +20,9 @@ from .const import (
     CONF_DEBUG_LOGGING,
     CONF_POLL_INTERVAL,
     DOMAIN,
+    LOG_LEVEL_DEBUG,
+    LOG_LEVEL_DEFAULT,
+    LOG_LEVEL_INFO,
     MATTER_DRY_FAN_DEVICES,
     UPDATE_INTERVAL_SECONDS,
 )
@@ -45,9 +48,18 @@ def _apply_debug_logging(cfg: dict) -> None:
     them, since a child with no explicit level inherits its parent's.
     """
     package_logger = logging.getLogger(__package__)
-    if cfg.get(CONF_DEBUG_LOGGING, False):
+    level = cfg.get(CONF_DEBUG_LOGGING, LOG_LEVEL_DEFAULT)
+    # Migrate the old on/off checkbox's stored bool values.
+    if level is True:
+        level = LOG_LEVEL_DEBUG
+    elif level is False:
+        level = LOG_LEVEL_DEFAULT
+
+    if level == LOG_LEVEL_DEBUG:
         package_logger.setLevel(logging.DEBUG)
         _LOGGER.debug("Debug logging enabled for %s", __package__)
+    elif level == LOG_LEVEL_INFO:
+        package_logger.setLevel(logging.INFO)
     else:
         package_logger.setLevel(logging.NOTSET)
 

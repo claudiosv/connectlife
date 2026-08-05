@@ -47,11 +47,15 @@ from .const import (
     CONF_TEMPERATURE_PRECISION,
     CONF_TEMPERATURE_SENSORS,
     CONF_TEMPERATURE_UNIT,
+    CONF_THERMOSTAT_FORCING_ENABLED,
     DEBOUNCE_DELAY_SECONDS,
     DEFAULT_HUMIDITY_HYSTERESIS,
     DOMAIN,
     DRY_IDLE_MODE_FAN_ONLY,
     DRY_IDLE_MODE_OFF,
+    LOG_LEVEL_DEBUG,
+    LOG_LEVEL_DEFAULT,
+    LOG_LEVEL_INFO,
     MATTER_SYNC_TIMEOUT_SECONDS,
     TEMP_UNIT_CELSIUS,
     TEMP_UNIT_FAHRENHEIT,
@@ -119,6 +123,15 @@ STEP_USER_SCHEMA = vol.Schema({
 })
 
 
+def _normalize_log_level(value: Any) -> str:
+    """Migrate the old on/off debug_logging checkbox's stored bool values."""
+    if value is True:
+        return LOG_LEVEL_DEBUG
+    if value is False or value is None:
+        return LOG_LEVEL_DEFAULT
+    return value
+
+
 def _options_schema(current: dict[str, Any]) -> vol.Schema:
     """Build the options schema pre-filled with current values."""
     return vol.Schema({
@@ -143,6 +156,10 @@ def _options_schema(current: dict[str, Any]) -> vol.Schema:
         vol.Optional(
             CONF_EXTERNAL_TEMP_ENABLED,
             default=current.get(CONF_EXTERNAL_TEMP_ENABLED, True),
+        ): bool,
+        vol.Optional(
+            CONF_THERMOSTAT_FORCING_ENABLED,
+            default=current.get(CONF_THERMOSTAT_FORCING_ENABLED, False),
         ): bool,
         vol.Optional(
             CONF_CURRENT_HUMIDITY_ENTITY,
@@ -258,8 +275,8 @@ def _options_schema(current: dict[str, Any]) -> vol.Schema:
         ): str,
         vol.Optional(
             CONF_DEBUG_LOGGING,
-            default=current.get(CONF_DEBUG_LOGGING, False),
-        ): bool,
+            default=_normalize_log_level(current.get(CONF_DEBUG_LOGGING)),
+        ): vol.In([LOG_LEVEL_DEFAULT, LOG_LEVEL_INFO, LOG_LEVEL_DEBUG]),
     })
 
 
@@ -386,6 +403,9 @@ class ConnectLifeOptionsFlow(OptionsFlow):
                             CONF_EXTERNAL_TEMP_ENABLED: user_input.get(
                                 CONF_EXTERNAL_TEMP_ENABLED, True
                             ),
+                            CONF_THERMOSTAT_FORCING_ENABLED: user_input.get(
+                                CONF_THERMOSTAT_FORCING_ENABLED, False
+                            ),
                             CONF_CURRENT_HUMIDITY_ENTITY: user_input.get(
                                 CONF_CURRENT_HUMIDITY_ENTITY
                             ),
@@ -423,7 +443,7 @@ class ConnectLifeOptionsFlow(OptionsFlow):
                             ),
                             CONF_DEVICES_CONFIG: user_input[CONF_DEVICES_CONFIG],
                             CONF_DEBUG_LOGGING: user_input.get(
-                                CONF_DEBUG_LOGGING, False
+                                CONF_DEBUG_LOGGING, LOG_LEVEL_DEFAULT
                             ),
                         },
                     )

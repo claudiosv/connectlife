@@ -72,6 +72,24 @@ def _redact(data: dict[str, Any] | None) -> dict[str, Any] | None:
     return {k: ("***" if k in _SENSITIVE_KEYS else v) for k, v in data.items()}
 
 
+def _diff_status(
+    previous: dict[str, Any], new: dict[str, Any]
+) -> dict[str, tuple[Any, Any]]:
+    """Return {key: (previous_value, new_value)} for entries that differ.
+
+    Only keys present in `new` are compared — `previous` may carry many more
+    fields than are actually changing. Values are compared as strings since
+    ConnectLife reports (and expects) status values as strings regardless of
+    their logical type.
+    """
+    diff: dict[str, tuple[Any, Any]] = {}
+    for key, new_val in new.items():
+        old_val = previous.get(key)
+        if str(old_val) != str(new_val):
+            diff[key] = (old_val, new_val)
+    return diff
+
+
 class ConnectLifeAuthError(Exception):
     """Raised when authentication fails."""
 
@@ -157,6 +175,10 @@ class ConnectLifeApi:
         self._refresh_token: str | None = None
         self._store: Store | None = None
         self._cache_loaded = False
+        # Most recently fetched statusList per device (puid), used to log
+        # what actually changed on update_device()/get_devices() calls
+        # instead of the full payload/state every time.
+        self._last_status: dict[str, dict[str, Any]] = {}
         if hass is not None:
             from homeassistant.helpers.storage import Store as _Store
 
@@ -523,6 +545,18 @@ class ConnectLifeApi:
         devices: list[dict[str, Any]] = response["deviceList"]
         _LOGGER.info("Fetched status for %d device(s) from ConnectLife", len(devices))
 
+        for device in devices:
+            puid = device.get("puid")
+            if not puid:
+                continue
+            fresh_status = device.get("statusList", {})
+            diff = _diff_status(self._last_status.get(puid, {}), fresh_status)
+            if diff:
+                _LOGGER.info(
+                    "[%s] ConnectLife state changed vs local: %s", puid, diff
+                )
+            self._last_status[puid] = dict(fresh_status)
+
         # for i, device in enumerate(devices):
         #     if i > 0:
         #         await asyncio.sleep(ENERGY_REQUEST_DELAY)
@@ -594,7 +628,20 @@ class ConnectLifeApi:
         # not JSON numbers/booleans — sending raw ints causes "Signature check
         # fail" even though the signing algorithm itself is otherwise correct.
         properties = {k: str(v) for k, v in properties.items()}
-        _LOGGER.info("Updating device %s: %s", device_id, properties)
+        diff = _diff_status(self._last_status.get(device_id, {}), properties)
+        if diff:
+            _LOGGER.info(
+                "Updating device %s — changes vs last known ConnectLife state: %s",
+                device_id,
+                diff,
+            )
+        else:
+            _LOGGER.info(
+                "Updating device %s: no change vs last known ConnectLife state "
+                "(sending: %s)",
+                device_id,
+                properties,
+            )
         payload = self._common_params() | {
             "accessToken": token,
             "puid": device_id,

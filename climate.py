@@ -50,6 +50,7 @@ from .const import (
     CONF_MATTER_SYNC_TIMEOUT,
     CONF_TARGET_HUMIDITY,
     CONF_TEMPERATURE_PRECISION,
+    CONF_THERMOSTAT_FORCING_ENABLED,
     DEBOUNCE_DELAY_SECONDS,
     DEFAULT_DEVICES_CONFIG,
     DEFAULT_HUMIDITY_HYSTERESIS,
@@ -132,6 +133,7 @@ async def async_setup_entry(
     humidity_hysteresis = float(
         cfg.get(CONF_HUMIDITY_HYSTERESIS, DEFAULT_HUMIDITY_HYSTERESIS)
     )
+    thermostat_forcing_enabled = cfg.get(CONF_THERMOSTAT_FORCING_ENABLED, False)
     matter_climate_entity = cfg.get(CONF_MATTER_CLIMATE_ENTITY)
     matter_sync_timeout = float(
         cfg.get(CONF_MATTER_SYNC_TIMEOUT, MATTER_SYNC_TIMEOUT_SECONDS)
@@ -162,6 +164,7 @@ async def async_setup_entry(
             matter_sync_timeout,
             dry_idle_mode,
             humidity_hysteresis,
+            thermostat_forcing_enabled,
         )
         for puid, device in coordinator.data.items()
     ]
@@ -309,6 +312,7 @@ class ConnectLifeClimate(
         matter_sync_timeout: float = MATTER_SYNC_TIMEOUT_SECONDS,
         dry_idle_mode: str = DRY_IDLE_MODE_FAN_ONLY,
         humidity_hysteresis: float = DEFAULT_HUMIDITY_HYSTERESIS,
+        thermostat_forcing_enabled: bool = False,
     ) -> None:
         super().__init__(coordinator)
         self._puid = puid
@@ -324,6 +328,7 @@ class ConnectLifeClimate(
         self._humidity_precision = humidity_precision
         self._dry_idle_mode = dry_idle_mode
         self._humidity_hysteresis = humidity_hysteresis
+        self._thermostat_forcing_enabled = thermostat_forcing_enabled
         # Sticky "user asked for dry mode, humidity is doing the rest" state:
         # once set, hvac_mode keeps reporting DRY even while we're internally
         # idling the linked Matter entity (fan_only/off) to hold the target
@@ -404,7 +409,7 @@ class ConnectLifeClimate(
             features |= ClimateEntityFeature.TARGET_TEMPERATURE
         # Fan speed: not available in dry mode, nor while Boost forces high
         # or Sleep forces low.
-        if self._fan_options and mode != HVACMode.DRY and not boosting and not sleeping:
+        if self._fan_options and mode != HVACMode.DRY and not (boosting or sleeping):
             features |= ClimateEntityFeature.FAN_MODE
         # Swing: available in all non-off modes
         if self._swing_options and mode != HVACMode.OFF:
@@ -575,6 +580,11 @@ class ConnectLifeClimate(
         except (TypeError, ValueError):
             return None
 
+    def _matter_temp_matches(self, target_temp: float) -> bool:
+        """Whether the linked Matter entity's target temp already equals target_temp."""
+        matter_val = self._matter_temperature("temperature")
+        return matter_val is not None and round(matter_val) == round(target_temp)
+
     def _clamp_for_matter(self, temp: float) -> float:
         """Convert to system unit and clamp within the Matter entity's own bounds.
 
@@ -607,7 +617,11 @@ class ConnectLifeClimate(
         if raw is not None:
             try:
                 bound = float(raw)
-                return bound - _MATTER_BOUND_SAFETY_MARGIN if is_max else bound + _MATTER_BOUND_SAFETY_MARGIN
+                return (
+                    bound - _MATTER_BOUND_SAFETY_MARGIN
+                    if is_max
+                    else bound + _MATTER_BOUND_SAFETY_MARGIN
+                )
             except (TypeError, ValueError):
                 pass
         fallback_c = _MATTER_MAX_TEMP_C if is_max else _MATTER_MIN_TEMP_C
@@ -831,6 +845,10 @@ class ConnectLifeClimate(
         """Set HVAC mode."""
         _LOGGER.debug("[%s] async_set_hvac_mode(%s)", self._puid, hvac_mode)
 
+        # Captured before any optimistic overrides are applied below, so it
+        # reflects whether a preset was active going into this mode switch.
+        preset_was_active = self.preset_mode != PRESET_NONE
+
         # Only DRY, with a humidity entity/target and a linked Matter device,
         # enters our own humidity-managed dry/idle loop — any other explicit
         # mode change (including DRY -> DRY without those prerequisites)
@@ -861,15 +879,27 @@ class ConnectLifeClimate(
             overrides = {"t_power": 1, "t_work_mode": int(mode_val)}
             # Clear presets incompatible with the target mode so the device
             # doesn't hold stale state after the switch.
-            if hvac_mode == HVACMode.AUTO:
+            if hvac_mode in (HVACMode.AUTO, HVACMode.FAN_ONLY):
                 overrides.update({"t_sleep": 0, "t_super": 0, "t_fan_mute": 0})
             elif hvac_mode == HVACMode.DRY:
                 overrides["t_super"] = 0
+            overrides.update(self._swing_on_overrides())
 
         self._set_optimistic(overrides)
         self.async_write_ha_state()
 
-        if self._matter_climate_entity and hvac_mode in _MATTER_SUPPORTED_MODES:
+        # A preset (Sleep/Boost) owns t_sleep/t_super/t_fan_mute, which only
+        # the ConnectLife API can carry — Matter has no concept of them, so
+        # a mode switch away from an active preset must go through
+        # ConnectLife so the clearing overrides above actually reach the
+        # device. Turning off is exempt: it doesn't touch those fields, so
+        # it's always safe to route through Matter when linked.
+        use_matter = (
+            self._matter_climate_entity
+            and hvac_mode in _MATTER_SUPPORTED_MODES
+            and (hvac_mode == HVACMode.OFF or not preset_was_active)
+        )
+        if use_matter:
             _LOGGER.info(
                 "[%s] Sending set_hvac_mode=%s to Matter entity %s",
                 self._puid,
@@ -892,9 +922,7 @@ class ConnectLifeClimate(
                 )
                 self._enqueue(overrides)
             else:
-                _LOGGER.debug(
-                    "[%s] Matter set_hvac_mode succeeded", self._puid
-                )
+                _LOGGER.debug("[%s] Matter set_hvac_mode succeeded", self._puid)
                 self._schedule_refresh()
         else:
             self._enqueue(overrides)
@@ -915,13 +943,25 @@ class ConnectLifeClimate(
                 "Target temperature cannot be set in %s mode", self.hvac_mode
             )
             return
-        if self.preset_mode == PRESET_BOOST and temp != self.min_temp:
+        preset = self.preset_mode
+        if preset == PRESET_BOOST and temp != self.min_temp:
             _LOGGER.warning(
                 "Target temperature is locked to %.1f while Boost preset is active",
                 self.min_temp,
             )
             return
-        if self._current_temp_entity and self._external_temp_enabled:
+        # A preset (Sleep/Boost) owns t_sleep/t_super/t_fan_mute, which only
+        # the ConnectLife API can carry — Matter has no concept of them. A
+        # temperature change made while a preset is active must go through
+        # ConnectLife instead: routing it through Matter (or through the
+        # external-sensor thermostat loop, which refuses to act while a
+        # preset is active) would either be silently dropped or leave the
+        # device's preset state out of sync.
+        if (
+            preset == PRESET_NONE
+            and self._current_temp_entity
+            and self._external_temp_enabled
+        ):
             # External sensor mode: store desired room temp and let the thermostat
             # logic decide the actual API target.
             _LOGGER.debug(
@@ -932,7 +972,13 @@ class ConnectLifeClimate(
             self._target_room_temp = float(temp)
             self.async_write_ha_state()
             await self._async_control()
-        elif self._matter_climate_entity and self.hvac_mode == HVACMode.COOL:
+        elif (
+            preset == PRESET_NONE
+            and self._matter_climate_entity
+            and self.hvac_mode == HVACMode.COOL
+        ):
+            if self._matter_temp_matches(float(temp)):
+                return
             overrides = {"t_temp": int(temp)}
             self._set_optimistic(overrides)
             self.async_write_ha_state()
@@ -989,27 +1035,17 @@ class ConnectLifeClimate(
         if self.preset_mode == PRESET_SLEEP and fan_mode != "low":
             _LOGGER.warning("Fan mode is locked to low while Sleep preset is active")
             return
+        if self.hvac_mode == HVACMode.DRY:
+            _LOGGER.warning("Fan mode is locked while Dry mode is active")
+            return
+
         fan_val = self._fan_options.get(fan_mode)
         if fan_val is None:
             _LOGGER.warning("Unknown fan mode: %s", fan_mode)
             return
+
         overrides: dict[str, Any] = {"t_fan_speed": int(fan_val)}
-        if self.hvac_mode == HVACMode.DRY:
-            # Dry mode doesn't support fan speed; switch to the best available
-            # mode that does, in a single API call.
-            fallback = next(
-                (
-                    slug
-                    for slug in ("auto", "cool", "fan_only", "heat")
-                    if slug in self._mode_options
-                ),
-                None,
-            )
-            if fallback is None:
-                _LOGGER.warning("No mode available that supports fan speed control")
-                return
-            overrides["t_power"] = 1
-            overrides["t_work_mode"] = int(self._mode_options[fallback])
+
         self._set_optimistic(overrides)
         self.async_write_ha_state()
         self._enqueue(overrides)
@@ -1216,26 +1252,42 @@ class ConnectLifeClimate(
             current_temp = self._sensor_temperature(self._current_temp_entity)
             if current_temp is not None:
                 if self._matter_climate_entity and self.hvac_mode == HVACMode.COOL:
-                    _LOGGER.debug(
-                        "[%s] Thermostat: sensor=%.1f -> syncing Matter target to %.1f",
-                        self._puid,
-                        current_temp,
-                        self._target_room_temp,
-                    )
                     await self._async_thermostat_via_matter(self._target_room_temp)
                 else:
-                    is_f = self.temperature_unit == UnitOfTemperature.FAHRENHEIT
-                    if current_temp > self._target_room_temp:
-                        api_temp = _THERMOSTAT_COOL_F if is_f else _THERMOSTAT_COOL_C
-                    else:
-                        api_temp = _THERMOSTAT_IDLE_F if is_f else _THERMOSTAT_IDLE_C
                     _LOGGER.debug(
-                        "[%s] Thermostat: sensor=%.1f target=%.1f -> forcing t_temp=%s",
+                        "[%s] Thermostat: Matter entity is %s and hvac_mode is %s, forcing ConnectLife t_temp based on sensor=%.1f target=%.1f",
                         self._puid,
+                        self._matter_climate_entity,
+                        self.hvac_mode,
                         current_temp,
                         self._target_room_temp,
-                        api_temp,
                     )
+                    if self._thermostat_forcing_enabled:
+                        is_f = self.temperature_unit == UnitOfTemperature.FAHRENHEIT
+                        if current_temp > self._target_room_temp:
+                            api_temp = (
+                                _THERMOSTAT_COOL_F if is_f else _THERMOSTAT_COOL_C
+                            )
+                        else:
+                            api_temp = (
+                                _THERMOSTAT_IDLE_F if is_f else _THERMOSTAT_IDLE_C
+                            )
+                        _LOGGER.debug(
+                            "[%s] Thermostat: sensor=%.1f target=%.1f -> forcing t_temp=%s",
+                            self._puid,
+                            current_temp,
+                            self._target_room_temp,
+                            api_temp,
+                        )
+                    else:
+                        # if self._target_room_temp ==
+                        # _LOGGER.debug(
+                        #     "[%s] Thermostat: sensor=%.1f target=%.1f -> not forcing t_temp (forbidden)",
+                        #     self._puid,
+                        #     current_temp,
+                        #     self._target_room_temp,
+                        # )
+                        api_temp = int(self._target_room_temp)
                     await self._async_thermostat_via_connectlife(api_temp)
 
         # --- Dry-mode humidity control ---
@@ -1287,11 +1339,6 @@ class ConnectLifeClimate(
         except (TypeError, ValueError):
             device_temp = -1
         if device_temp == api_temp:
-            _LOGGER.debug(
-                "[%s] Thermostat (ConnectLife): already at t_temp=%s, skipping",
-                self._puid,
-                api_temp,
-            )
             return
         await self.coordinator.api.update_device(
             self._puid, self._build_properties({"t_temp": api_temp})
@@ -1302,13 +1349,7 @@ class ConnectLifeClimate(
         entity, instead of ConnectLife's bang-bang min/max forcing — Matter can
         actually hold a real setpoint, so let the device regulate to it.
         """
-        matter_val = self._matter_temperature("temperature")
-        if matter_val is not None and round(matter_val) == round(target_temp):
-            _LOGGER.debug(
-                "[%s] Thermostat (Matter): already at target=%.1f, skipping",
-                self._puid,
-                target_temp,
-            )
+        if self._matter_temp_matches(target_temp):
             return
         matter_temp = self._clamp_for_matter(target_temp)
         _LOGGER.info(
@@ -1372,8 +1413,7 @@ class ConnectLifeClimate(
                 await self._async_set_matter_hvac_mode(HVACMode.DRY)
         elif current_humidity <= target - buffer:
             _LOGGER.debug(
-                "[%s] Dry/idle: humidity %.1f%% <= target-buffer %.1f%% — "
-                "idling (%s)",
+                "[%s] Dry/idle: humidity %.1f%% <= target-buffer %.1f%% — idling (%s)",
                 self._puid,
                 current_humidity,
                 target - buffer,
@@ -1407,8 +1447,7 @@ class ConnectLifeClimate(
             )
         except Exception:
             _LOGGER.warning(
-                "Failed to set Matter entity %s to %s for dry/idle humidity "
-                "control",
+                "Failed to set Matter entity %s to %s for dry/idle humidity control",
                 self._matter_climate_entity,
                 hvac_mode,
                 exc_info=True,

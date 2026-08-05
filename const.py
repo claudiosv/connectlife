@@ -8,6 +8,7 @@ CONF_TEMPERATURE_UNIT = "temperature_unit"
 CONF_TEMPERATURE_SENSORS = "temperature_sensors"
 CONF_CURRENT_TEMP_ENTITY = "current_temperature_entity"
 CONF_EXTERNAL_TEMP_ENABLED = "external_temp_enabled"
+CONF_THERMOSTAT_FORCING_ENABLED = "thermostat_forcing_enabled"
 CONF_CURRENT_HUMIDITY_ENTITY = "current_humidity_entity"
 CONF_TARGET_HUMIDITY = "target_humidity"
 CONF_DRY_IDLE_MODE = "dry_idle_mode"
@@ -24,6 +25,12 @@ CONF_DEBUG_LOGGING = "debug_logging"
 
 TEMP_UNIT_CELSIUS = "celsius"
 TEMP_UNIT_FAHRENHEIT = "fahrenheit"
+
+# Package log level override (see __init__._apply_debug_logging). "default"
+# leaves Home Assistant's own configured level in place.
+LOG_LEVEL_DEFAULT = "default"
+LOG_LEVEL_INFO = "info"
+LOG_LEVEL_DEBUG = "debug"
 
 # What to do with the linked Matter device once the dry-mode humidity target
 # is reached (see DRY_IDLE_MODE_* below).

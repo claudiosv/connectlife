@@ -10,6 +10,7 @@
                     "temperature_sensors": "Create separate temperature sensor entities",
                     "current_temperature_entity": "External temperature sensor (overrides AC reading)",
                     "external_temp_enabled": "Use the external temperature sensor",
+                    "thermostat_forcing_enabled": "Force min/max temperature to hold the external sensor's target when not routed through Matter (bang-bang control)",
                     "current_humidity_entity": "External humidity sensor",
                     "target_humidity": "Target humidity for dry-mode control (%)",
                     "dry_idle_mode": "Dry mode action once target humidity is reached (fan_only or off)",
@@ -23,7 +24,7 @@
                     "command_refresh_delay": "Delay after sending a command before re-polling the cloud (seconds)",
                     "debounce_delay": "Delay before sending batched rapid commands (seconds)",
                     "devices_config": "Device configuration (JSON)",
-                    "debug_logging": "Enable verbose debug logging"
+                    "debug_logging": "Logging level (default, info, or debug)"
                 }
             }
         },
