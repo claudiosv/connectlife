@@ -1033,19 +1033,31 @@ class ConnectLifeClimate(
         # external-sensor thermostat loop, which refuses to act while a
         # preset is active) would either be silently dropped or leave the
         # device's preset state out of sync.
+        #
+        # Regardless of which branch below actually sends the command, keep
+        # the external-sensor thermostat's desired room temp in sync with
+        # every explicit change. Otherwise it goes stale while a preset is
+        # active (nothing else updates it), and the moment preset_mode next
+        # reads NONE — whether the preset was deliberately cleared, or our
+        # optimistic guess about it simply timed out before ConnectLife's
+        # cloud confirmed it — _async_control()'s thermostat loop would
+        # silently force Matter back to that stale value, clobbering
+        # whatever the user actually set while the preset was active.
+        if self._current_temp_entity:
+            self._target_room_temp = float(temp)
+
         if (
             preset == PRESET_NONE
             and self._current_temp_entity
             and self._external_temp_enabled
         ):
-            # External sensor mode: store desired room temp and let the thermostat
-            # logic decide the actual API target.
+            # External sensor mode: let the thermostat logic decide the
+            # actual API target from the room temp we just stored above.
             _LOGGER.debug(
                 "[%s] External sensor mode: storing desired room temp %r",
                 self._puid,
                 temp,
             )
-            self._target_room_temp = float(temp)
             self.async_write_ha_state()
             await self._async_control()
         elif (
@@ -1458,8 +1470,10 @@ class ConnectLifeClimate(
         if self._matter_temp_matches(target_temp):
             return
         matter_temp = self._clamp_for_matter(target_temp)
+        if matter_temp is not None and round(matter_temp) == round(target_temp):
+            return
         _LOGGER.info(
-            "[%s] Thermostat (Matter): setting Matter target temp=%r (our target=%.1f)",
+            "[%s] Thermostat (Matter): setting Matter target temp=%r (our target=%r)",
             self._puid,
             matter_temp,
             target_temp,
