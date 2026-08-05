@@ -386,6 +386,12 @@ class ConnectLifeClimate(
         self._suppress_self_confirm = False
         self._pending_overrides: dict[str, Any] = {}
         self._debounce_task: asyncio.Task | None = None
+        # Snapshot of ConnectLife's last-known statusList taken right
+        # before the *first* optimistic mutation of the current debounce
+        # batch — used as the diff baseline in _build_properties instead of
+        # self._device(), which _set_optimistic mutates immediately and
+        # would otherwise make every pending override look like a no-op.
+        self._send_baseline: dict[str, Any] | None = None
 
         feature_code = device.get("deviceFeatureCode", "")
         self._device_config = _get_device_config(devices_config, feature_code)
@@ -486,6 +492,12 @@ class ConnectLifeClimate(
         now = time.monotonic()
         self._optimistic_status.update(overrides)
         self._optimistic_set_at.update(dict.fromkeys(overrides, now))
+        # No debounce batch currently accumulating means this is the first
+        # mutation of a new one — snapshot the pre-mutation state now, for
+        # _build_properties to diff against once _flush_pending eventually
+        # runs (by then self._device() already reflects this mutation).
+        if not self._pending_overrides:
+            self._send_baseline = dict(self._device().get("statusList", {}))
         # Mirror into the shared coordinator data too (same dict instance
         # every platform reads via coordinator.data[puid]["statusList"]), and
         # broadcast it through the coordinator so switch.py's per-property
@@ -856,6 +868,7 @@ class ConnectLifeClimate(
         overrides = dict(self._pending_overrides)
         self._pending_overrides.clear()
         props = self._build_properties(overrides)
+        self._send_baseline = None
         if props.keys() <= {"t_beep"}:
             _LOGGER.debug(
                 "[%s] Skipping debounced update: nothing changed vs "
@@ -895,7 +908,15 @@ class ConnectLifeClimate(
         if str(overrides.get("t_power")) == "0":
             return {"t_power": 0, "t_beep": 1 if self._beeping else 0}
 
-        current = self._device().get("statusList", {})
+        # Use the pre-batch snapshot when available — self._device() may
+        # already reflect this same batch's own optimistic mutations by the
+        # time this runs (via the debounce delay), which would make every
+        # pending override look like a no-op.
+        current = (
+            self._send_baseline
+            if self._send_baseline is not None
+            else self._device().get("statusList", {})
+        )
         props: dict[str, Any] = {
             key: val
             for key, val in overrides.items()
