@@ -307,6 +307,11 @@ def _build_full_properties(
     # device last happened to report (which may be stale or unset).
     props["t_beep"] = 1 if beeping else 0
     props.update(overrides)
+    # Sleep sets its own fan speed on the device; sending t_fan_speed
+    # alongside t_sleep=1 has been observed to interfere with the device
+    # actually entering/staying in sleep.
+    if str(props.get("t_sleep", 0)) == "1":
+        props.pop("t_fan_speed", None)
     return props
 
 
@@ -914,6 +919,12 @@ class ConnectLifeClimate(
 
         if overrides:
             props.update(overrides)
+
+        # Sleep sets its own fan speed on the device; sending t_fan_speed
+        # alongside t_sleep=1 has been observed to interfere with the
+        # device actually entering/staying in sleep.
+        if str(props.get("t_sleep", 0)) == "1":
+            props.pop("t_fan_speed", None)
 
         return props
 
