@@ -72,6 +72,19 @@ def _redact(data: dict[str, Any] | None) -> dict[str, Any] | None:
     return {k: ("***" if k in _SENSITIVE_KEYS else v) for k, v in data.items()}
 
 
+_DIFF_IGNORE_KEYS = {
+    # ConnectLife never echoes t_beep back in its status responses, so it
+    # would otherwise always show as a bogus None -> value change.
+    "t_beep",
+}
+# Keys ConnectLife sometimes omits from a device's initial status entirely —
+# only worth reporting once we actually have a previous value to compare
+# against, or every first sighting logs a meaningless None -> value "change".
+_DIFF_ONLY_IF_KNOWN_KEYS = {
+    "t_eco",
+}
+
+
 def _diff_status(
     previous: dict[str, Any], new: dict[str, Any]
 ) -> dict[str, tuple[Any, Any]]:
@@ -84,7 +97,11 @@ def _diff_status(
     """
     diff: dict[str, tuple[Any, Any]] = {}
     for key, new_val in new.items():
+        if key in _DIFF_IGNORE_KEYS:
+            continue
         old_val = previous.get(key)
+        if old_val is None and key in _DIFF_ONLY_IF_KNOWN_KEYS:
+            continue
         if str(old_val) != str(new_val):
             diff[key] = (old_val, new_val)
     return diff
