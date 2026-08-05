@@ -43,6 +43,7 @@ from .const import (
     CONF_MATTER_SYNC_TIMEOUT,
     CONF_MATTER_TEMPERATURE_SENSOR_ENTITY,
     CONF_POLL_INTERVAL,
+    CONF_SENSOR_CONTROL_MIN_INTERVAL,
     CONF_TARGET_HUMIDITY,
     CONF_TEMPERATURE_PRECISION,
     CONF_TEMPERATURE_SENSORS,
@@ -57,6 +58,7 @@ from .const import (
     LOG_LEVEL_DEFAULT,
     LOG_LEVEL_INFO,
     MATTER_SYNC_TIMEOUT_SECONDS,
+    SENSOR_CONTROL_MIN_INTERVAL_SECONDS,
     TEMP_UNIT_CELSIUS,
     TEMP_UNIT_FAHRENHEIT,
     UPDATE_INTERVAL_SECONDS,
@@ -214,6 +216,20 @@ def _options_schema(current: dict[str, Any]) -> vol.Schema:
             NumberSelectorConfig(
                 min=5,
                 max=300,
+                step=5,
+                mode=NumberSelectorMode.BOX,
+                unit_of_measurement="s",
+            )
+        ),
+        vol.Optional(
+            CONF_SENSOR_CONTROL_MIN_INTERVAL,
+            default=current.get(
+                CONF_SENSOR_CONTROL_MIN_INTERVAL, SENSOR_CONTROL_MIN_INTERVAL_SECONDS
+            ),
+        ): NumberSelector(
+            NumberSelectorConfig(
+                min=0,
+                max=600,
                 step=5,
                 mode=NumberSelectorMode.BOX,
                 unit_of_measurement="s",
@@ -424,6 +440,10 @@ class ConnectLifeOptionsFlow(OptionsFlow):
                             ),
                             CONF_MATTER_SYNC_TIMEOUT: user_input.get(
                                 CONF_MATTER_SYNC_TIMEOUT, MATTER_SYNC_TIMEOUT_SECONDS
+                            ),
+                            CONF_SENSOR_CONTROL_MIN_INTERVAL: user_input.get(
+                                CONF_SENSOR_CONTROL_MIN_INTERVAL,
+                                SENSOR_CONTROL_MIN_INTERVAL_SECONDS,
                             ),
                             CONF_TEMPERATURE_PRECISION: user_input.get(
                                 CONF_TEMPERATURE_PRECISION

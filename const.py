@@ -16,6 +16,7 @@ CONF_HUMIDITY_HYSTERESIS = "humidity_hysteresis"
 CONF_MATTER_CLIMATE_ENTITY = "matter_climate_entity"
 CONF_MATTER_TEMPERATURE_SENSOR_ENTITY = "matter_temperature_sensor_entity"
 CONF_MATTER_SYNC_TIMEOUT = "matter_sync_timeout"
+CONF_SENSOR_CONTROL_MIN_INTERVAL = "sensor_control_min_interval"
 CONF_TEMPERATURE_PRECISION = "temperature_precision"
 CONF_HUMIDITY_PRECISION = "humidity_precision"
 CONF_POLL_INTERVAL = "poll_interval"
@@ -48,6 +49,10 @@ DEBOUNCE_DELAY_SECONDS = 3  # seconds of inactivity before batched commands are 
 # still disagrees (ConnectLife's cloud can be slow to learn about a change
 # made directly on the Matter side).
 MATTER_SYNC_TIMEOUT_SECONDS = 60
+# Minimum time between _async_control() runs triggered by external sensor
+# updates (temp/humidity sensors can report every few seconds, far more
+# often than the thermostat loop needs to react).
+SENSOR_CONTROL_MIN_INTERVAL_SECONDS = 30
 TOKEN_CACHE_SECONDS = 86400  # 24 hours
 ENERGY_CACHE_SECONDS = 600  # 10 minutes
 

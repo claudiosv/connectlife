@@ -130,13 +130,15 @@ class ConnectLifeToggleSwitch(CoordinatorEntity[ConnectLifeCoordinator], SwitchE
         self._optimistic_is_on = value
         self.async_write_ha_state()
         # Mirror into the shared coordinator data too (same dict instance
-        # every platform reads via coordinator.data[puid]["statusList"]) so
-        # e.g. the climate entity's preset chip reflects a direct Sleep/
-        # Boost/Fan Mute toggle immediately instead of staying stale until
-        # the next poll confirms it.
+        # every platform reads via coordinator.data[puid]["statusList"]), and
+        # broadcast it through the coordinator so e.g. the climate entity's
+        # preset chip actually refreshes immediately on a direct Sleep/
+        # Boost/Fan Mute toggle — a plain dict mutation updates what it'd
+        # read next, but doesn't itself trigger its async_write_ha_state().
         device = self.coordinator.data.get(self._puid) if self.coordinator.data else None
         if device is not None:
             device.setdefault("statusList", {})[self._key] = 1 if value else 0
+            self.coordinator.async_set_updated_data(self.coordinator.data)
         # Send the full current property set, not just this one key —
         # ConnectLife's API can silently drop a bare single-property update.
         props = _build_full_properties(

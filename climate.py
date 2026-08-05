@@ -48,6 +48,7 @@ from .const import (
     CONF_HUMIDITY_PRECISION,
     CONF_MATTER_CLIMATE_ENTITY,
     CONF_MATTER_SYNC_TIMEOUT,
+    CONF_SENSOR_CONTROL_MIN_INTERVAL,
     CONF_TARGET_HUMIDITY,
     CONF_TEMPERATURE_PRECISION,
     CONF_THERMOSTAT_FORCING_ENABLED,
@@ -58,6 +59,7 @@ from .const import (
     DRY_IDLE_MODE_FAN_ONLY,
     DRY_IDLE_MODE_OFF,
     MATTER_SYNC_TIMEOUT_SECONDS,
+    SENSOR_CONTROL_MIN_INTERVAL_SECONDS,
     TEMP_CODE_CELSIUS,
     TEMP_CODE_FAHRENHEIT,
 )
@@ -95,6 +97,23 @@ _MATTER_SUPPORTED_MODES = {
     HVACMode.DRY,
     HVACMode.FAN_ONLY,
     HVACMode.OFF,
+}
+
+# Properties that are only ever written through the ConnectLife API, never
+# routed through Matter (Matter has no concept of presets, fan speed, or
+# swing). Unlike t_power/t_work_mode/t_temp — which can lag behind a
+# Matter-side change for up to _matter_sync_timeout — ConnectLife's own poll
+# is always the authoritative, current value for these the moment it reports
+# one, whether or not it matches what we last optimistically set (e.g. the
+# device auto-exited Sleep, or the preset was changed from another client).
+_CONNECTLIFE_ONLY_KEYS = {
+    "t_sleep",
+    "t_super",
+    "t_fan_mute",
+    "t_fan_speed",
+    "t_swing_direction",
+    "t_swing_angle",
+    "t_up_down",
 }
 
 # Fallback Matter min/max (°C) used only if the linked entity's own min_temp/
@@ -138,6 +157,11 @@ async def async_setup_entry(
     matter_sync_timeout = float(
         cfg.get(CONF_MATTER_SYNC_TIMEOUT, MATTER_SYNC_TIMEOUT_SECONDS)
     )
+    sensor_control_min_interval = float(
+        cfg.get(
+            CONF_SENSOR_CONTROL_MIN_INTERVAL, SENSOR_CONTROL_MIN_INTERVAL_SECONDS
+        )
+    )
     temperature_precision = cfg.get(CONF_TEMPERATURE_PRECISION)
     humidity_precision = cfg.get(CONF_HUMIDITY_PRECISION)
     command_refresh_delay = int(
@@ -165,6 +189,7 @@ async def async_setup_entry(
             dry_idle_mode,
             humidity_hysteresis,
             thermostat_forcing_enabled,
+            sensor_control_min_interval,
         )
         for puid, device in coordinator.data.items()
     ]
@@ -313,6 +338,7 @@ class ConnectLifeClimate(
         dry_idle_mode: str = DRY_IDLE_MODE_FAN_ONLY,
         humidity_hysteresis: float = DEFAULT_HUMIDITY_HYSTERESIS,
         thermostat_forcing_enabled: bool = False,
+        sensor_control_min_interval: float = SENSOR_CONTROL_MIN_INTERVAL_SECONDS,
     ) -> None:
         super().__init__(coordinator)
         self._puid = puid
@@ -329,6 +355,13 @@ class ConnectLifeClimate(
         self._dry_idle_mode = dry_idle_mode
         self._humidity_hysteresis = humidity_hysteresis
         self._thermostat_forcing_enabled = thermostat_forcing_enabled
+        self._sensor_control_min_interval = sensor_control_min_interval
+        # Monotonic timestamp of the last _async_control() run triggered by
+        # an external sensor event, and whether a genuine (non-self-
+        # broadcast) coordinator update has landed since then — see
+        # _async_sensor_event.
+        self._last_sensor_control_at: float | None = None
+        self._coordinator_data_fresh = True
         # Sticky "user asked for dry mode, humidity is doing the rest" state:
         # once set, hvac_mode keeps reporting DRY even while we're internally
         # idling the linked Matter entity (fan_only/off) to hold the target
@@ -351,6 +384,7 @@ class ConnectLifeClimate(
         # trusting our own guess until ConnectLife's data confirms it, up to
         # _matter_sync_timeout, rather than clearing on every coordinator poll.
         self._optimistic_set_at: dict[str, float] = {}
+        self._suppress_self_confirm = False
         self._pending_overrides: dict[str, Any] = {}
         self._debounce_task: asyncio.Task | None = None
 
@@ -454,25 +488,50 @@ class ConnectLifeClimate(
         self._optimistic_status.update(overrides)
         self._optimistic_set_at.update(dict.fromkeys(overrides, now))
         # Mirror into the shared coordinator data too (same dict instance
-        # every platform reads via coordinator.data[puid]["statusList"]) so
-        # switch.py's per-property toggles (Sleep/Boost/Fan Mute/...) and
-        # fan.py reflect a preset/mode/temp change immediately, instead of
-        # staying stale until the next poll confirms it. This is naturally
-        # self-cleaning: coordinator.data is replaced wholesale on every poll.
+        # every platform reads via coordinator.data[puid]["statusList"]), and
+        # broadcast it through the coordinator so switch.py's per-property
+        # toggles (Sleep/Boost/Fan Mute/...) and fan.py actually refresh
+        # their displayed state immediately — a plain dict mutation updates
+        # what they'd read next, but doesn't itself trigger their
+        # async_write_ha_state(). This is naturally self-cleaning:
+        # coordinator.data is replaced wholesale on every real poll.
         device = (
             self.coordinator.data.get(self._puid) if self.coordinator.data else None
         )
         if device is not None:
             device.setdefault("statusList", {}).update(overrides)
+            # This broadcast necessarily makes coordinator.data "confirm"
+            # whatever we just wrote (we wrote it), which would otherwise
+            # cause _handle_coordinator_update below to immediately clear
+            # optimistic tracking for Matter-routable keys (t_temp/t_power/
+            # t_work_mode) that are supposed to stay trusted until a *real*
+            # poll confirms them — reintroducing flicker back to stale
+            # ConnectLife data once an actual poll lands. Suppress that
+            # self-confirmation for this one synthetic update; other
+            # entities (switch.py, fan.py) still get the broadcast and
+            # simply re-render from the now-current coordinator.data.
+            self._suppress_self_confirm = True
+            try:
+                self.coordinator.async_set_updated_data(self.coordinator.data)
+            finally:
+                self._suppress_self_confirm = False
 
     @callback
     def _handle_coordinator_update(self) -> None:
+        # Track that a genuine ConnectLife update has landed since the last
+        # sensor-triggered control run, so _async_sensor_event only acts on
+        # confirmed cloud state rather than repeatedly recomputing off the
+        # same not-yet-confirmed data. Our own synthetic broadcasts from
+        # _set_optimistic (_suppress_self_confirm) don't count.
+        if not self._suppress_self_confirm:
+            self._coordinator_data_fresh = True
+
         # Keep trusting an optimistic key until ConnectLife's own data confirms
         # it, or _matter_sync_timeout elapses — rather than clearing on every
         # poll, which would revert a Matter-redirected change back to stale
         # ConnectLife data before its cloud has caught up with the physical
         # device (that sync can lag well past one poll cycle).
-        if self._optimistic_status:
+        if self._optimistic_status and not self._suppress_self_confirm:
             fresh = self._device().get("statusList", {})
             now = time.monotonic()
             for key, val in list(self._optimistic_status.items()):
@@ -480,7 +539,13 @@ class ConnectLifeClimate(
                 expired = (
                     now - self._optimistic_set_at.get(key, 0)
                 ) > self._matter_sync_timeout
-                if confirmed or expired:
+                # ConnectLife-only keys (presets, fan speed, swing) never go
+                # through Matter, so there's no lag to wait out — trust
+                # ConnectLife's own poll immediately, even when it disagrees
+                # with our last guess (e.g. Sleep auto-exited on the device,
+                # or another client changed it).
+                reported = key in _CONNECTLIFE_ONLY_KEYS and key in fresh
+                if confirmed or expired or reported:
                     self._optimistic_status.pop(key, None)
                     self._optimistic_set_at.pop(key, None)
         super()._handle_coordinator_update()
@@ -1221,7 +1286,15 @@ class ConnectLifeClimate(
 
     @callback
     def _async_sensor_event(self, event: Any) -> None:
-        """Handle a state change on a tracked sensor entity."""
+        """Handle a state change on a tracked sensor entity.
+
+        Sensors can report far more often than the control loop needs to
+        react (e.g. every few seconds) — throttle to at most one
+        _async_control() run per _sensor_control_min_interval, and only run
+        it once a genuine ConnectLife update has landed since the last run,
+        so we're always acting on confirmed cloud state instead of racing
+        ahead of it and potentially overwriting our own just-sent command.
+        """
         new_state = event.data.get("new_state")
         _LOGGER.debug(
             "[%s] External sensor %s changed to %s",
@@ -1229,6 +1302,28 @@ class ConnectLifeClimate(
             event.data.get("entity_id"),
             new_state.state if new_state else None,
         )
+        if not self._coordinator_data_fresh:
+            _LOGGER.debug(
+                "[%s] Skipping sensor-triggered control: no ConnectLife "
+                "update since the last run",
+                self._puid,
+            )
+            return
+        now = time.monotonic()
+        if (
+            self._sensor_control_min_interval > 0
+            and self._last_sensor_control_at is not None
+            and (now - self._last_sensor_control_at) < self._sensor_control_min_interval
+        ):
+            _LOGGER.debug(
+                "[%s] Skipping sensor-triggered control: throttled (%.1fs < %.1fs)",
+                self._puid,
+                now - self._last_sensor_control_at,
+                self._sensor_control_min_interval,
+            )
+            return
+        self._last_sensor_control_at = now
+        self._coordinator_data_fresh = False
         self.hass.async_create_task(self._async_control())
 
     @callback
