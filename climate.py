@@ -276,12 +276,14 @@ def _build_swing_options(config: dict) -> dict[str, dict[str, str]]:
 
 
 def _build_full_properties(
-    overrides: dict[str, Any], *, beeping: bool = False
+    status: dict[str, Any], overrides: dict[str, Any], *, beeping: bool = False
 ) -> dict[str, Any]:
     """Build the property payload from only what's actually changing.
 
     Used by platforms (switch, fan) that don't track the full per-device
-    config ConnectLifeClimate._build_properties() uses.
+    config ConnectLifeClimate._build_properties() uses. `status` is used
+    only to drop override keys that already match the device's current
+    value — never resent as a full snapshot.
 
     ConnectLife's API rejects a t_power=0 command bundled with other
     operational property changes with errorCode 16 ("Command status
@@ -290,14 +292,19 @@ def _build_full_properties(
     if str(overrides.get("t_power")) == "0":
         return {"t_power": 0, "t_beep": 1 if beeping else 0}
 
-    props: dict[str, Any] = dict(overrides)
+    props: dict[str, Any] = {
+        key: val for key, val in overrides.items() if str(status.get(key)) != str(val)
+    }
     # Always reflect the configured beeping preference, not whatever the
     # device last happened to report (which may be stale or unset).
     props["t_beep"] = 1 if beeping else 0
     # Sleep sets its own fan speed on the device; sending t_fan_speed
     # alongside t_sleep=1 has been observed to interfere with the device
-    # actually entering/staying in sleep.
-    if str(props.get("t_sleep", 0)) == "1":
+    # actually entering/staying in sleep. Use the *effective* sleep value
+    # (overrides, falling back to current) since t_sleep itself may have
+    # been dropped above as a no-op (already 1).
+    effective_sleep = overrides.get("t_sleep", status.get("t_sleep", 0))
+    if str(effective_sleep) == "1":
         props.pop("t_fan_speed", None)
     return props
 
@@ -849,6 +856,14 @@ class ConnectLifeClimate(
         overrides = dict(self._pending_overrides)
         self._pending_overrides.clear()
         props = self._build_properties(overrides)
+        if props.keys() <= {"t_beep"}:
+            _LOGGER.debug(
+                "[%s] Skipping debounced update: nothing changed vs "
+                "ConnectLife's last-known state (overrides were: %s)",
+                self._puid,
+                overrides,
+            )
+            return
         _LOGGER.debug(
             "[%s] Sending debounced update to ConnectLife: %s", self._puid, props
         )
@@ -864,6 +879,13 @@ class ConnectLifeClimate(
     ) -> dict[str, Any]:
         """Build the property payload from only what's actually changing.
 
+        `overrides` accumulates whole-intent dicts from each command method
+        (e.g. async_set_preset_mode always sends t_sleep/t_super together to
+        enforce their mutual exclusivity) — several of those keys are
+        commonly no-ops (already at that value). Drop any key that already
+        matches ConnectLife's last-known value so only genuine changes go
+        out on the wire.
+
         ConnectLife's API rejects a t_power=0 command bundled with other
         operational property changes with errorCode 16 ("Command status
         mutex") — when turning off, send only t_power (+ t_beep), dropping
@@ -873,13 +895,21 @@ class ConnectLifeClimate(
         if str(overrides.get("t_power")) == "0":
             return {"t_power": 0, "t_beep": 1 if self._beeping else 0}
 
-        props: dict[str, Any] = dict(overrides)
+        current = self._device().get("statusList", {})
+        props: dict[str, Any] = {
+            key: val
+            for key, val in overrides.items()
+            if str(current.get(key)) != str(val)
+        }
         props["t_beep"] = 1 if self._beeping else 0
 
         # Sleep sets its own fan speed on the device; sending t_fan_speed
         # alongside t_sleep=1 has been observed to interfere with the
-        # device actually entering/staying in sleep.
-        if str(props.get("t_sleep", 0)) == "1":
+        # device actually entering/staying in sleep. Use the *effective*
+        # sleep value (overrides, falling back to current) since t_sleep
+        # itself may have been dropped above as a no-op (already 1).
+        effective_sleep = overrides.get("t_sleep", current.get("t_sleep", 0))
+        if str(effective_sleep) == "1":
             props.pop("t_fan_speed", None)
 
         return props

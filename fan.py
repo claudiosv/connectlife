@@ -238,7 +238,15 @@ class ConnectLifeFan(CoordinatorEntity[ConnectLifeCoordinator], FanEntity):
         await self._async_update({"t_power": 1, "t_fan_speed": int(fan_val)})
 
     async def _async_update(self, overrides: dict[str, Any]) -> None:
-        props = _build_full_properties(overrides, beeping=self._beeping)
+        props = _build_full_properties(self._status(), overrides, beeping=self._beeping)
+        if props.keys() <= {"t_beep"}:
+            _LOGGER.debug(
+                "[%s] Skipping update: nothing changed vs ConnectLife's "
+                "last-known state (overrides were: %s)",
+                self._puid,
+                overrides,
+            )
+            return
         _LOGGER.debug("[%s] Sending update to ConnectLife: %s", self._puid, props)
         await self.coordinator.api.update_device(self._puid, props)
         self._schedule_refresh()

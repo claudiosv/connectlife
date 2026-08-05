@@ -127,6 +127,10 @@ class ConnectLifeToggleSwitch(CoordinatorEntity[ConnectLifeCoordinator], SwitchE
 
     async def _async_set(self, value: bool) -> None:
         _LOGGER.debug("[%s] %s: async_turn_%s()", self._puid, self._key, "on" if value else "off")
+        # Captured before we mutate coordinator.data below, so the payload
+        # is diffed against ConnectLife's actual last-known value, not our
+        # own not-yet-sent optimistic mutation.
+        current_status = dict(self._status())
         self._optimistic_is_on = value
         self.async_write_ha_state()
         # Mirror into the shared coordinator data too (same dict instance
@@ -140,9 +144,15 @@ class ConnectLifeToggleSwitch(CoordinatorEntity[ConnectLifeCoordinator], SwitchE
             device.setdefault("statusList", {})[self._key] = 1 if value else 0
             self.coordinator.async_set_updated_data(self.coordinator.data)
         props = _build_full_properties(
+            current_status,
             {self._key: 1 if value else 0},
             beeping=self._beeping,
         )
+        if props.keys() <= {"t_beep"}:
+            _LOGGER.debug(
+                "[%s] %s: skipping update, already %s", self._puid, self._key, value
+            )
+            return
         _LOGGER.debug("[%s] Sending update to ConnectLife: %s", self._puid, props)
         await self.coordinator.api.update_device(self._puid, props)
         self._schedule_refresh()
