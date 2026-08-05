@@ -1,0 +1,64 @@
+button.py
+  s_ecd09bf03ed26b::t_f91c0122e8ddb0 10
+__init__.py
+  s_ecd09bf03ed26b::t_ba940159f2193b 23-25
+  s_ecd09bf03ed26b::t_0d078d532ace0a 51-58,61-62
+translations/en.json
+  s_ecd09bf03ed26b::t_ff8950901f9a1c 13
+  s_ecd09bf03ed26b::t_cef9dedad8361e 27
+config_flow.py
+  s_ecd09bf03ed26b::t_6e58e7af1941ad 161-163
+  s_ecd09bf03ed26b::t_619ccca612e420 126-134
+  s_ecd09bf03ed26b::t_c4c16a3c2547c3 50
+  s_ecd09bf03ed26b::t_bd9811f9934b20 56-58
+  s_ecd09bf03ed26b::t_c394add7a8f5be 278-279
+  s_ecd09bf03ed26b::t_d3ed213b994084 406-408
+  s_ecd09bf03ed26b::t_ac67cbed84e0ac 446
+  s_ecd09bf03ed26b::t_11af9f6c2c52f9 160
+api.py
+  s_ecd09bf03ed26b::t_e2ef6b0538e1b1 75-92
+  s_ecd09bf03ed26b::t_3009ffa943457b 631-644
+  s_ecd09bf03ed26b::t_818ae0044ec062 178-181
+  s_ecd09bf03ed26b::t_daac3943090285 548-559
+strings.json
+  s_ecd09bf03ed26b::t_001ad1c6e73edf 13
+  s_ecd09bf03ed26b::t_fe19498af4bc66 27
+const.py
+  s_ecd09bf03ed26b::t_6a949c02d91b1d 29-34
+  s_ecd09bf03ed26b::t_261bf99d3f3553 11
+climate.py
+  s_ecd09bf03ed26b::t_7be3a3fe99049f 53
+  s_ecd09bf03ed26b::t_6e5ceb1fabfabd 891-902
+  s_ecd09bf03ed26b::t_474c88045ccf51 848-851
+  s_ecd09bf03ed26b::t_40fd68dc1c6d59 882
+  s_ecd09bf03ed26b::t_53e2032399ac98 583-587
+  s_ecd09bf03ed26b::t_2b9758c0daff5a 167
+  s_ecd09bf03ed26b::t_13a1abde021475 136
+  h_aceaeb4e74d6dc 412,620,624,886,1038-1041,1046,1048,1258,1260-1261,1265-1290,1416,1450
+  s_ecd09bf03ed26b::t_cb6608484b9525 946-947,953-964,975-981
+  s_ecd09bf03ed26b::t_2a21fa88bdb40a 1352
+  s_ecd09bf03ed26b::t_313b6cf8e18955 315
+  s_ecd09bf03ed26b::t_33cdc6714b4de4 331
+  s_ecd09bf03ed26b::t_b0abd216accbdd 621-623,925
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "e7b0f2edb82308d782f5993b8b8b61278846a668",
+  "prompts": {},
+  "humans": {
+    "h_aceaeb4e74d6dc": {
+      "author": "Claudio Spiess <claudiosv@users.noreply.github.com>"
+    }
+  },
+  "sessions": {
+    "s_ecd09bf03ed26b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e9c44ec1-3a36-4e1e-8c0b-f0c6925e5f62",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "Claudio Spiess <claudiosv@users.noreply.github.com>"
+    }
+  }
+}
