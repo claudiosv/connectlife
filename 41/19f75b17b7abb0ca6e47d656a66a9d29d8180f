@@ -1,0 +1,26 @@
+fan.py
+  s_ecd09bf03ed26b::t_889b69f7cca302 241-249
+climate.py
+  s_ecd09bf03ed26b::t_0f0ca2831da825 859-866
+  s_ecd09bf03ed26b::t_7ad7a3123e6d4e 908-912
+  s_ecd09bf03ed26b::t_98ee1ebcad4b8d 279,284-286,295-297,303-307
+  s_ecd09bf03ed26b::t_1819ee614c1a74 882-888,898-903
+switch.py
+  s_ecd09bf03ed26b::t_a521760a204a9b 130-133,147,151-155
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "4119f75b17b7abb0ca6e47d656a66a9d29d8180f",
+  "prompts": {},
+  "sessions": {
+    "s_ecd09bf03ed26b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e9c44ec1-3a36-4e1e-8c0b-f0c6925e5f62",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "Claudio Spiess <claudiosv@users.noreply.github.com>"
+    }
+  }
+}
