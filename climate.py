@@ -442,7 +442,7 @@ class ConnectLifeClimate(
         ):
             features |= ClimateEntityFeature.TARGET_TEMPERATURE
         # Fan speed: not available in dry mode, nor while Boost forces high
-        # or Sleep forces auto.
+        # or Sleep forces low.
         if self._fan_options and mode != HVACMode.DRY and not (boosting or sleeping):
             features |= ClimateEntityFeature.FAN_MODE
         # Swing: available in all non-off modes
@@ -1108,8 +1108,8 @@ class ConnectLifeClimate(
         if self.preset_mode == PRESET_BOOST and fan_mode != "high":
             _LOGGER.warning("Fan mode is locked to high while Boost preset is active")
             return
-        if self.preset_mode == PRESET_SLEEP and fan_mode != "auto":
-            _LOGGER.warning("Fan mode is locked to auto while Sleep preset is active")
+        if self.preset_mode == PRESET_SLEEP and fan_mode != "low":
+            _LOGGER.warning("Fan mode is locked to low while Sleep preset is active")
             return
         if self.hvac_mode == HVACMode.DRY:
             _LOGGER.warning("Fan mode is locked while Dry mode is active")
@@ -1177,10 +1177,10 @@ class ConnectLifeClimate(
             overrides["t_fan_mute"] = 1
         elif preset_mode == PRESET_SLEEP:
             overrides["t_sleep"] = 1
-            # Sleep requires auto fan speed, swing on.
-            auto_val = self._fan_options.get("auto")
-            if auto_val is not None:
-                overrides["t_fan_speed"] = int(auto_val)
+            # Sleep requires low fan speed, swing on.
+            low_val = self._fan_options.get("low")
+            if low_val is not None:
+                overrides["t_fan_speed"] = int(low_val)
             overrides.update(self._swing_on_overrides())
         elif preset_mode == PRESET_BOOST:
             overrides["t_super"] = 1
