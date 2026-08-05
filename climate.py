@@ -276,37 +276,24 @@ def _build_swing_options(config: dict) -> dict[str, dict[str, str]]:
 
 
 def _build_full_properties(
-    status: dict[str, Any], overrides: dict[str, Any], *, beeping: bool = False
+    overrides: dict[str, Any], *, beeping: bool = False
 ) -> dict[str, Any]:
-    """Build a full writable-property payload from current status + overrides.
+    """Build the property payload from only what's actually changing.
 
-    ConnectLife's API can silently ignore (or the AC firmware reverts) a bare
-    single-property update like {"t_up_down": 1} — resending the device's
-    other current values alongside the change is what makes it stick. Used
-    by platforms (switch, fan) that don't track the full per-device config
-    ConnectLifeClimate._build_properties() uses, just the raw status dict.
+    Used by platforms (switch, fan) that don't track the full per-device
+    config ConnectLifeClimate._build_properties() uses.
 
-    Powering off is the exception: ConnectLife's API rejects a t_power=0
-    command bundled with other operational property changes with
-    errorCode 16 ("Command status mutex") — send only t_power (+ t_beep)
-    in that case instead of resending everything else too.
+    ConnectLife's API rejects a t_power=0 command bundled with other
+    operational property changes with errorCode 16 ("Command status
+    mutex") — when turning off, send only t_power (+ t_beep).
     """
-    is_off = overrides.get("t_power", status.get("t_power", 0)) in {"0", 0}
-    if is_off:
-        props: dict[str, Any] = {"t_power": 0}
-    else:
-        props = {}
-        for key, val in status.items():
-            if not key.startswith("t_"):
-                continue
-            try:
-                props[key] = int(val)
-            except (TypeError, ValueError):
-                props[key] = val
+    if str(overrides.get("t_power")) == "0":
+        return {"t_power": 0, "t_beep": 1 if beeping else 0}
+
+    props: dict[str, Any] = dict(overrides)
     # Always reflect the configured beeping preference, not whatever the
     # device last happened to report (which may be stale or unset).
     props["t_beep"] = 1 if beeping else 0
-    props.update(overrides)
     # Sleep sets its own fan speed on the device; sending t_fan_speed
     # alongside t_sleep=1 has been observed to interfere with the device
     # actually entering/staying in sleep.
@@ -875,50 +862,19 @@ class ConnectLifeClimate(
     def _build_properties(
         self, overrides: dict[str, Any] | None = None
     ) -> dict[str, Any]:
-        """Build the full property payload from current state + overrides.
+        """Build the property payload from only what's actually changing.
 
         ConnectLife's API rejects a t_power=0 command bundled with other
         operational property changes with errorCode 16 ("Command status
-        mutex") — when turning off, send only t_power (+ t_beep), not the
-        rest of the current operating state.
+        mutex") — when turning off, send only t_power (+ t_beep), dropping
+        anything else that happened to be pending in the same batch.
         """
-        status = self._status()
-        is_off = (overrides or {}).get("t_power", status.get("t_power", 0)) in {"0", 0}
+        overrides = overrides or {}
+        if str(overrides.get("t_power")) == "0":
+            return {"t_power": 0, "t_beep": 1 if self._beeping else 0}
 
-        props: dict[str, Any] = {
-            "t_power": 0 if is_off else 1,
-            "t_beep": 1 if self._beeping else 0,
-        }
-
-        if not is_off:
-            props["t_temp_type"] = status.get("t_temp_type", TEMP_CODE_CELSIUS)
-            props["t_temp"] = int(status.get("t_temp", 24))
-            # props["t_eco"] = int(status.get("t_eco", 0))
-            props["t_work_mode"] = int(status.get("t_work_mode", 0))
-
-            # Fan speed
-            if self._fan_options and "t_fan_speed" in status:
-                props["t_fan_speed"] = int(status["t_fan_speed"])
-
-            # Preset-controlled fields — include current values if present
-            # for key in ("t_fan_mute", "t_sleep", "t_super"):
-            for key in ("t_sleep", "t_super"):
-                if key in status:
-                    props[key] = int(status[key])
-
-            # Swing — include whichever field(s) this device uses
-            if self._swing_options:
-                sample = next(iter(self._swing_options.values()))
-                if sample["type"] == "directional":
-                    if "t_swing_direction" in status:
-                        props["t_swing_direction"] = int(status["t_swing_direction"])
-                    if "t_swing_angle" in status:
-                        props["t_swing_angle"] = int(status["t_swing_angle"])
-                elif sample["type"] == "up_down" and "t_up_down" in status:
-                    props["t_up_down"] = int(status["t_up_down"])
-
-        if overrides:
-            props.update(overrides)
+        props: dict[str, Any] = dict(overrides)
+        props["t_beep"] = 1 if self._beeping else 0
 
         # Sleep sets its own fan speed on the device; sending t_fan_speed
         # alongside t_sleep=1 has been observed to interfere with the

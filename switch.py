@@ -139,10 +139,7 @@ class ConnectLifeToggleSwitch(CoordinatorEntity[ConnectLifeCoordinator], SwitchE
         if device is not None:
             device.setdefault("statusList", {})[self._key] = 1 if value else 0
             self.coordinator.async_set_updated_data(self.coordinator.data)
-        # Send the full current property set, not just this one key —
-        # ConnectLife's API can silently drop a bare single-property update.
         props = _build_full_properties(
-            self._status(),
             {self._key: 1 if value else 0},
             beeping=self._beeping,
         )
