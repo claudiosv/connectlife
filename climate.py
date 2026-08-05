@@ -99,21 +99,20 @@ _MATTER_SUPPORTED_MODES = {
     HVACMode.OFF,
 }
 
-# Properties that are only ever written through the ConnectLife API, never
-# routed through Matter (Matter has no concept of presets, fan speed, or
-# swing). Unlike t_power/t_work_mode/t_temp — which can lag behind a
-# Matter-side change for up to _matter_sync_timeout — ConnectLife's own poll
-# is always the authoritative, current value for these the moment it reports
-# one, whether or not it matches what we last optimistically set (e.g. the
-# device auto-exited Sleep, or the preset was changed from another client).
-_CONNECTLIFE_ONLY_KEYS = {
+# Preset flags whose optimistic value must never silently expire. Letting
+# these time out is actively dangerous, not just a display glitch: once
+# _matter_sync_timeout elapses without ConnectLife confirming e.g. t_sleep=1,
+# preset_mode falls back to reading the (stale) ConnectLife-reported value —
+# which _async_control()'s thermostat loop treats as "no preset active" and
+# responds to by sending a real Matter set_temperature call. Sending Matter
+# a command while the device is actually still in Sleep/Boost knocks it out
+# of that mode for real, which is exactly the failure this is protecting
+# against. Only an actually-confirming poll (matching what we set) may clear
+# these — never a timeout.
+_PRESET_KEYS_NO_EXPIRY = {
     "t_sleep",
     "t_super",
     "t_fan_mute",
-    "t_fan_speed",
-    "t_swing_direction",
-    "t_swing_angle",
-    "t_up_down",
 }
 
 # Fallback Matter min/max (°C) used only if the linked entity's own min_temp/
@@ -536,16 +535,23 @@ class ConnectLifeClimate(
             now = time.monotonic()
             for key, val in list(self._optimistic_status.items()):
                 confirmed = str(fresh.get(key)) == str(val)
+                if confirmed:
+                    self._optimistic_status.pop(key, None)
+                    self._optimistic_set_at.pop(key, None)
+                    continue
+                if key in _PRESET_KEYS_NO_EXPIRY:
+                    # Never fall back to ConnectLife's (possibly still-lagging)
+                    # reported value for these on a timeout — doing so makes
+                    # preset_mode read NONE while the device may still
+                    # genuinely be in Sleep/Boost, which causes
+                    # _async_control()'s Matter thermostat sync to fire and
+                    # physically knock it out of that mode. Only a poll that
+                    # actually matches what we set may clear these.
+                    continue
                 expired = (
                     now - self._optimistic_set_at.get(key, 0)
                 ) > self._matter_sync_timeout
-                # ConnectLife-only keys (presets, fan speed, swing) never go
-                # through Matter, so there's no lag to wait out — trust
-                # ConnectLife's own poll immediately, even when it disagrees
-                # with our last guess (e.g. Sleep auto-exited on the device,
-                # or another client changed it).
-                reported = key in _CONNECTLIFE_ONLY_KEYS and key in fresh
-                if confirmed or expired or reported:
+                if expired:
                     self._optimistic_status.pop(key, None)
                     self._optimistic_set_at.pop(key, None)
         super()._handle_coordinator_update()
