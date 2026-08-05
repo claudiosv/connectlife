@@ -295,14 +295,25 @@ def _build_full_properties(
     props: dict[str, Any] = {
         key: val for key, val in overrides.items() if str(status.get(key)) != str(val)
     }
+
+    # t_sleep/t_super must be sent in total isolation — bundling ANY other
+    # property (even the other preset flag, which is otherwise implied by
+    # the device's own mutual exclusivity) has been observed to prevent the
+    # device from actually entering/exiting the mode. Prefer t_sleep if
+    # both are genuinely changing at once.
+    if "t_sleep" in props:
+        props = {"t_sleep": props["t_sleep"]}
+    elif "t_super" in props:
+        props = {"t_super": props["t_super"]}
+
     # Always reflect the configured beeping preference, not whatever the
     # device last happened to report (which may be stale or unset).
     props["t_beep"] = 1 if beeping else 0
     # Sleep sets its own fan speed on the device; sending t_fan_speed
     # alongside t_sleep=1 has been observed to interfere with the device
     # actually entering/staying in sleep. Use the *effective* sleep value
-    # (overrides, falling back to current) since t_sleep itself may have
-    # been dropped above as a no-op (already 1).
+    # (overrides, falling back to current) since t_sleep itself may not be
+    # part of this payload (already 1, or isolated away above).
     effective_sleep = overrides.get("t_sleep", status.get("t_sleep", 0))
     if str(effective_sleep) == "1":
         props.pop("t_fan_speed", None)
@@ -922,13 +933,26 @@ class ConnectLifeClimate(
             for key, val in overrides.items()
             if str(current.get(key)) != str(val)
         }
+
+        # t_sleep/t_super must be sent in total isolation — bundling ANY
+        # other property (even the other preset flag, which is otherwise
+        # implied by the device's own mutual exclusivity) has been observed
+        # to prevent the device from actually entering/exiting the mode.
+        # Prefer t_sleep if both are genuinely changing at once (e.g. a
+        # direct Boost -> Sleep transition).
+        if "t_sleep" in props:
+            props = {"t_sleep": props["t_sleep"]}
+        elif "t_super" in props:
+            props = {"t_super": props["t_super"]}
+
         props["t_beep"] = 1 if self._beeping else 0
 
         # Sleep sets its own fan speed on the device; sending t_fan_speed
         # alongside t_sleep=1 has been observed to interfere with the
         # device actually entering/staying in sleep. Use the *effective*
         # sleep value (overrides, falling back to current) since t_sleep
-        # itself may have been dropped above as a no-op (already 1).
+        # itself may not be part of this payload (already 1, or isolated
+        # away above).
         effective_sleep = overrides.get("t_sleep", current.get("t_sleep", 0))
         if str(effective_sleep) == "1":
             props.pop("t_fan_speed", None)
