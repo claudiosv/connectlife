@@ -11,11 +11,15 @@ import connectlife.test_server as cl_test_server
 from homeassistant.const import CONF_PASSWORD, CONF_USERNAME
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
-from pytest_homeassistant_custom_component.common import MockConfigEntry
+from pytest_homeassistant_custom_component.common import (
+    MockConfigEntry,
+    async_mock_service,
+)
 
 from custom_components.connectlife.const import (
     CONF_COMMAND_REFRESH_DELAY,
     CONF_DEBOUNCE_DELAY,
+    CONF_MATTER_CLIMATE_ENTITY,
     CONF_POLL_INTERVAL,
     CONF_TEMPERATURE_SENSORS,
     DOMAIN,
@@ -217,3 +221,64 @@ async def test_refresh_button_triggers_gateway_poll(
     await hass.async_block_till_done()
 
     assert hass.states.get(climate_id).attributes["temperature"] == 27
+
+
+async def test_turn_on_routes_through_matter_when_resuming_into_cool(
+    hass: HomeAssistant,
+    patch_connectlife_api: str,
+    enable_custom_integrations: None,
+) -> None:
+    """climate.turn_on on an off device whose last mode was cool uses Matter.
+
+    The device is off (t_power=0) but its stored t_work_mode is still "2"
+    (cool) — that's what it would resume into, so with a linked Matter
+    entity and no preset active, turn_on should drive that Matter entity
+    instead of writing straight to the ConnectLife gateway.
+    """
+    matter_entity_id = "climate.fake_matter_ac"
+    cl_test_server.appliances[PUID] = make_appliance(PUID, status={"t_power": "0"})
+    await _setup(
+        hass, _make_entry(**{CONF_MATTER_CLIMATE_ENTITY: matter_entity_id})
+    )
+    climate_id = _entity_id(hass, "climate", PUID)
+    assert hass.states.get(climate_id).state == "off"
+
+    matter_calls = async_mock_service(hass, "climate", "set_hvac_mode")
+
+    await hass.services.async_call(
+        "climate",
+        "turn_on",
+        {"entity_id": climate_id},
+        blocking=True,
+    )
+    await hass.async_block_till_done()
+
+    assert len(matter_calls) == 1
+    assert matter_calls[0].data["entity_id"] == matter_entity_id
+    assert matter_calls[0].data["hvac_mode"] == "cool"
+
+    # Matter, not ConnectLife, is the source of truth here — the gateway's
+    # own copy of t_power is left untouched.
+    assert cl_test_server.appliances[PUID]["statusList"]["t_power"] == "0"
+
+
+async def test_turn_on_without_matter_writes_directly_to_gateway(
+    hass: HomeAssistant,
+    patch_connectlife_api: str,
+    enable_custom_integrations: None,
+) -> None:
+    """Without a linked Matter entity, turn_on still just writes to ConnectLife."""
+    cl_test_server.appliances[PUID] = make_appliance(PUID, status={"t_power": "0"})
+    await _setup(hass, _make_entry())
+    climate_id = _entity_id(hass, "climate", PUID)
+    assert hass.states.get(climate_id).state == "off"
+
+    await hass.services.async_call(
+        "climate",
+        "turn_on",
+        {"entity_id": climate_id},
+        blocking=True,
+    )
+    await hass.async_block_till_done()
+
+    assert cl_test_server.appliances[PUID]["statusList"]["t_power"] == "1"

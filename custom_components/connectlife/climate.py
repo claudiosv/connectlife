@@ -794,8 +794,17 @@ class ConnectLifeClimate(
         if status.get("t_power") == "0" or status.get("t_power") == 0:
             return HVACMode.OFF
 
-        work_mode_val = str(status.get("t_work_mode", ""))
-        # Find name for the API value
+        return self._resume_hvac_mode()
+
+    def _resume_hvac_mode(self) -> HVACMode:
+        """Map t_work_mode to a HVACMode, ignoring t_power.
+
+        This is what hvac_mode reports once the device is on; it's also what
+        the device would resume into if turned on right now, regardless of
+        whether t_power currently says it's off — used by async_turn_on() to
+        decide whether that resulting mode is one Matter can drive directly.
+        """
+        work_mode_val = str(self._status().get("t_work_mode", ""))
         for name, api_val in self._mode_options.items():
             if api_val == work_mode_val:
                 cl_name = name.replace("_", " ")
@@ -1256,6 +1265,21 @@ class ConnectLifeClimate(
     async def async_turn_on(self) -> None:
         """Turn the AC on."""
         _LOGGER.debug("[%s] async_turn_on()", self._puid)
+
+        # Mirror async_turn_off()'s delegation to async_set_hvac_mode(), which
+        # already knows how to route cool/dry through the linked Matter
+        # entity when no preset is active — resume_mode is what the device
+        # would come back on into, since hvac_mode itself just reports OFF
+        # while t_power is 0.
+        resume_mode = self._resume_hvac_mode()
+        if (
+            self._matter_climate_entity
+            and resume_mode in (HVACMode.COOL, HVACMode.DRY)
+            and self.preset_mode == PRESET_NONE
+        ):
+            await self.async_set_hvac_mode(resume_mode)
+            return
+
         overrides: dict[str, Any] = {"t_power": 1}
         self._set_optimistic(overrides)
         self.async_write_ha_state()
