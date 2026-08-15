@@ -21,7 +21,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Annotated
 
-# Make custom_components importable when running from this directory.
+# Make legacy_cli_api importable when running from a different cwd.
 sys.path.insert(0, str(Path(__file__).parent))
 
 import aiohttp

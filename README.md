@@ -8,8 +8,8 @@ A native Python Home Assistant custom integration for ConnectLife AC devices.
 - **Climate entity** per AC device — control power, HVAC mode, target temperature, fan speed, and swing
 - **Eco preset** — toggles the `t_eco` property on the device
 - **Energy sensor** — daily kWh consumption (where the API provides it)
-- **Config Flow UI** — set up entirely through the Home Assistant UI
-- Polls every 60 seconds; access token cached for 24 hours
+- **Config Flow UI** — set up entirely through the Home Assistant UI via OAuth2 login (no password stored)
+- **Real-time updates** — a WebSocket push connection reflects changes immediately, backed by a 60-second poll as a fallback
 
 ## Supported devices
 
@@ -30,17 +30,20 @@ A native Python Home Assistant custom integration for ConnectLife AC devices.
 
 ### Manual
 
-1. Copy the `custom_components/connectlife` directory into your
+1. Copy the `custom_components/connectlife_claudio_wrapper` directory into your
    `<config>/custom_components/` folder.
 2. Restart Home Assistant.
 3. Go to **Settings → Devices & Services → Add Integration** and search for **ConnectLife**.
 
 ## Configuration
 
+Setup happens via a browser-based OAuth2 login (click through to ConnectLife's
+own login page from the Add Integration flow) — no username/password is
+entered into Home Assistant directly. Everything else is configured
+afterwards from the integration's **Configure** button:
+
 | Field | Required | Default | Description |
 |---|---|---|---|
-| Email address | Yes | — | Your ConnectLife account email |
-| Password | Yes | — | Your ConnectLife account password |
 | Enable beep on commands | No | `false` | Whether the AC beeps when a command is sent |
 | Temperature unit | No | `celsius` | `celsius` or `fahrenheit` |
 | Device configuration (JSON) | No | See below | Per-device customisation of modes, fan speeds, and swing options |
@@ -78,12 +81,14 @@ If a device's feature code is not found in the JSON the integration falls back t
 
 ## Dependencies
 
-- `cryptography` >= 42.0.0 (listed in `manifest.json`; installed automatically by HA)
+- `tenacity` >= 8.2.0 (listed in `manifest.json`; installed automatically by HA)
 
 ## How it works
 
-1. Authenticates via Gigya (SAP CDC) using your ConnectLife credentials.
-2. Exchanges the Gigya JWT for an OAuth access token from `oauth.hijuconn.com`.
-3. Signs every request to the ConnectLife gateway using RSA-encrypted SHA-256.
-4. Polls the device list every 60 seconds and exposes each AC as a HA climate entity.
+1. Authenticates via a browser-redirect OAuth2 login against `oauth.hijuconn.com`,
+   handled by Home Assistant's own OAuth2 config-entry flow.
+2. Signs every request to the ConnectLife gateway using HMAC-SHA256.
+3. Opens a WebSocket connection that receives device status changes in real time.
+4. Also polls the device list every 60 seconds as a fallback, and exposes each
+   AC as a HA climate entity.
 5. Sends property-update requests directly to the ConnectLife API when you change a setting in HA.
