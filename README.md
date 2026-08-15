@@ -9,7 +9,7 @@ A native Python Home Assistant custom integration for ConnectLife AC devices.
 - **Eco preset** — toggles the `t_eco` property on the device
 - **Energy sensor** — daily kWh consumption (where the API provides it)
 - **Config Flow UI** — set up entirely through the Home Assistant UI
-- Polls every 60 seconds; access token cached for 24 hours
+- Polls every 60 seconds; access token cached in memory for the API-provided lifetime
 
 ## Supported devices
 
@@ -78,12 +78,13 @@ If a device's feature code is not found in the JSON the integration falls back t
 
 ## Dependencies
 
-- `cryptography` >= 42.0.0 (listed in `manifest.json`; installed automatically by HA)
+- [`connectlife`](https://pypi.org/project/connectlife/) (listed in `manifest.json`; installed automatically by HA) — handles authentication and all ConnectLife/HijuConn gateway requests
+- `tenacity` >= 8.2.0 (listed in `manifest.json`; installed automatically by HA) — retry/backoff on transient gateway errors
 
 ## How it works
 
-1. Authenticates via Gigya (SAP CDC) using your ConnectLife credentials.
-2. Exchanges the Gigya JWT for an OAuth access token from `oauth.hijuconn.com`.
-3. Signs every request to the ConnectLife gateway using RSA-encrypted SHA-256.
-4. Polls the device list every 60 seconds and exposes each AC as a HA climate entity.
-5. Sends property-update requests directly to the ConnectLife API when you change a setting in HA.
+1. Uses the [`connectlife`](https://github.com/oyvindwe/connectlife) Python library to authenticate via Gigya (SAP CDC)
+   and exchange the resulting JWT for an OAuth access token from `oauth.hijuconn.com`.
+2. Polls the device list every 60 seconds via that library and exposes each AC as a HA climate entity.
+3. Sends property-update requests through the same library when you change a setting in HA.
+4. Wraps those calls with retry/backoff on transient gateway errors (HTTP 429/500/502/503/504).

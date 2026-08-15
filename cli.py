@@ -14,6 +14,7 @@ so subsequent calls skip re-authentication entirely.
 from __future__ import annotations
 
 import asyncio
+import datetime as dt
 import json
 import sys
 import time
@@ -24,14 +25,12 @@ from typing import Annotated
 # Make custom_components importable when running from this directory.
 sys.path.insert(0, str(Path(__file__).parent))
 
-import aiohttp
 import typer
+from custom_components.connectlife.api import ConnectLifeApi
+from custom_components.connectlife.const import TEMP_CODE_FAHRENHEIT
 from rich import print_json
 from rich.console import Console
 from rich.table import Table
-
-from custom_components.connectlife.api import ConnectLifeApi
-from custom_components.connectlife.const import TEMP_CODE_FAHRENHEIT
 
 app = typer.Typer(no_args_is_help=True, pretty_exceptions_show_locals=False)
 console = Console()
@@ -63,20 +62,17 @@ def _inject_cached_token(api: ConnectLifeApi, cache: dict) -> None:
     token = cache.get("access_token")
     valid_until = cache.get("token_valid_until", 0.0)
     if token and time.time() < valid_until:
-        api._access_token = token
-        # Convert wall-clock expiry back to a monotonic deadline
-        api._token_expires_at = time.monotonic() + (valid_until - time.time())
+        api.client._access_token = token
+        api.client._expires = dt.datetime.fromtimestamp(valid_until)
 
 
 def _persist_token(api: ConnectLifeApi, cache: dict) -> None:
     """Write the current API token back to the cache file."""
-    token = api._access_token
-    expires_at = api._token_expires_at
-    if not token:
+    token = api.client._access_token
+    expires = api.client._expires
+    if not token or expires is None:
         return
-    # Convert monotonic deadline to a wall-clock timestamp for persistence
-    valid_until = time.time() + max(0.0, expires_at - time.monotonic())
-    _save_cache({**cache, "access_token": token, "token_valid_until": valid_until})
+    _save_cache({**cache, "access_token": token, "token_valid_until": expires.timestamp()})
 
 
 def _credentials_from_cache_or_prompt(
@@ -104,13 +100,12 @@ async def _api_session(username: str, password: str):
     Injects a cached token on entry and persists any newly fetched token on exit.
     """
     cache = _load_cache()
-    async with aiohttp.ClientSession() as session:
-        api = ConnectLifeApi(session, username, password)
-        _inject_cached_token(api, cache)
-        try:
-            yield api, cache
-        finally:
-            _persist_token(api, cache)
+    api = ConnectLifeApi(username, password)
+    _inject_cached_token(api, cache)
+    try:
+        yield api, cache
+    finally:
+        _persist_token(api, cache)
 
 
 # ---------------------------------------------------------------------------
@@ -220,11 +215,10 @@ def login(
     username, password = _credentials_from_cache_or_prompt(username, password, cache)
 
     async def _do():
-        async with aiohttp.ClientSession() as session:
-            api = ConnectLifeApi(session, username, password)
-            with console.status("Authenticating…"):
-                await api._ensure_token()
-            _persist_token(api, {**cache, "username": username, "password": password})
+        api = ConnectLifeApi(username, password)
+        with console.status("Authenticating…"):
+            await api.client.login()
+        _persist_token(api, {**cache, "username": username, "password": password})
 
     asyncio.run(_do())
     console.print(

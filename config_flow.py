@@ -6,7 +6,6 @@ import json
 import logging
 from typing import Any
 
-import aiohttp
 import voluptuous as vol
 from homeassistant.config_entries import (
     ConfigEntry,
@@ -16,7 +15,6 @@ from homeassistant.config_entries import (
 )
 from homeassistant.const import CONF_PASSWORD, CONF_USERNAME
 from homeassistant.core import callback
-from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.selector import (
     EntitySelector,
     EntitySelectorConfig,
@@ -25,7 +23,7 @@ from homeassistant.helpers.selector import (
     NumberSelectorMode,
 )
 
-from .api import ConnectLifeApi, ConnectLifeAuthError
+from .api import ConnectLifeApi, ConnectLifeApiError, ConnectLifeAuthError
 from .const import (
     COMMAND_REFRESH_DELAY_SECONDS,
     CONF_BEEPING,
@@ -322,9 +320,7 @@ class ConnectLifeConfigFlow(ConfigFlow, domain=DOMAIN):
                 await self.async_set_unique_id(user_input[CONF_USERNAME].lower())
                 self._abort_if_unique_id_configured()
 
-                session = async_get_clientsession(self.hass)
                 api = ConnectLifeApi(
-                    session,
                     user_input[CONF_USERNAME],
                     user_input[CONF_PASSWORD],
                     self.hass,
@@ -335,7 +331,7 @@ class ConnectLifeConfigFlow(ConfigFlow, domain=DOMAIN):
                         errors["base"] = "invalid_auth"
                 except ConnectLifeAuthError:
                     errors["base"] = "invalid_auth"
-                except aiohttp.ClientError:
+                except ConnectLifeApiError:
                     errors["base"] = "cannot_connect"
                 except Exception:
                     _LOGGER.exception("Unexpected error during credential validation")
@@ -378,9 +374,7 @@ class ConnectLifeOptionsFlow(OptionsFlow):
                 # Re-validate credentials only if the password changed
                 new_password = user_input[CONF_PASSWORD]
                 if new_password != current.get(CONF_PASSWORD):
-                    session = async_get_clientsession(self.hass)
                     api = ConnectLifeApi(
-                        session,
                         self._config_entry.data[CONF_USERNAME],
                         new_password,
                         self.hass,
@@ -391,7 +385,7 @@ class ConnectLifeOptionsFlow(OptionsFlow):
                             errors["base"] = "invalid_auth"
                     except ConnectLifeAuthError:
                         errors["base"] = "invalid_auth"
-                    except aiohttp.ClientError:
+                    except ConnectLifeApiError:
                         errors["base"] = "cannot_connect"
                     except Exception:
                         _LOGGER.exception(
