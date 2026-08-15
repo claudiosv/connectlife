@@ -13,7 +13,6 @@ from homeassistant.const import (
 )
 from homeassistant.core import Event, HomeAssistant
 from homeassistant.helpers import entity_platform
-from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .api import ConnectLifeApi
 from .const import (
@@ -48,6 +47,11 @@ def _apply_debug_logging(cfg: dict) -> None:
     them, since a child with no explicit level inherits its parent's.
     """
     package_logger = logging.getLogger(__package__)
+    # The `connectlife` PyPI package (auth + gateway requests) logs under its
+    # own "connectlife" namespace, not under this package's — mirror the
+    # level there too so enabling debug logging still shows request/response
+    # detail.
+    upstream_logger = logging.getLogger("connectlife")
     level = cfg.get(CONF_DEBUG_LOGGING, LOG_LEVEL_DEFAULT)
     # Migrate the old on/off checkbox's stored bool values.
     if level is True:
@@ -57,11 +61,14 @@ def _apply_debug_logging(cfg: dict) -> None:
 
     if level == LOG_LEVEL_DEBUG:
         package_logger.setLevel(logging.DEBUG)
+        upstream_logger.setLevel(logging.DEBUG)
         _LOGGER.debug("Debug logging enabled for %s", __package__)
     elif level == LOG_LEVEL_INFO:
         package_logger.setLevel(logging.INFO)
+        upstream_logger.setLevel(logging.NOTSET)
     else:
         package_logger.setLevel(logging.NOTSET)
+        upstream_logger.setLevel(logging.NOTSET)
 
 
 def entry_config(entry: ConfigEntry) -> dict:
@@ -119,9 +126,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     cfg = entry_config(entry)
     _apply_debug_logging(cfg)
     _LOGGER.debug("Setting up ConnectLife entry %s (title=%r)", entry.entry_id, entry.title)
-    session = async_get_clientsession(hass)
     api = ConnectLifeApi(
-        session=session,
         username=cfg[CONF_USERNAME],
         password=cfg[CONF_PASSWORD],
         hass=hass,

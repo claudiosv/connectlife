@@ -53,42 +53,13 @@ MATTER_SYNC_TIMEOUT_SECONDS = 60
 # updates (temp/humidity sensors can report every few seconds, far more
 # often than the thermostat loop needs to react).
 SENSOR_CONTROL_MIN_INTERVAL_SECONDS = 30
-TOKEN_CACHE_SECONDS = 86400  # 24 hours
-ENERGY_CACHE_SECONDS = 600  # 10 minutes
 
-# Rate-limit / retry behaviour
+# Rate-limit / retry behaviour, applied around calls into the `connectlife` package.
 RETRY_ATTEMPTS = 3  # max attempts per request before giving up
 RETRY_BACKOFF_BASE = 2.0  # seconds; delay = base * 2^attempt
 RETRY_BACKOFF_MAX = 60.0  # cap on computed delay
-ENERGY_REQUEST_DELAY = 1.0  # seconds between per-device energy calls
 
 AC_DEVICE_TYPE_CODES = {"009", "006", "008"}
-
-# ConnectLife API
-BASE_URL = "https://clife-eu-gateway.hijuconn.com"
-GIGYA_API_KEY = "4_yhTWQmHFpZkQZDSV1uV-_A"
-GIGYA_GMID = (
-    "gmid.ver4.AtLt3mZAMA.C8m5VqSTEQDrTRrkYYDgOaJWcyQ-XHow5nzQSXJF3EO3TnqTJ8tKUmQaaQ6z8p0s"
-    ".zcTbHe6Ax6lHfvTN7JUj7VgO4x8Vl-vk1u0kZcrkKmKWw8K9r0shyut_at5Q0ri6zTewnAv2g1Dc8dauuyd-Sw.sc3"
-)
-OAUTH_CLIENT_ID = "5065059336212"
-OAUTH_CLIENT_SECRET = "07swfKgvJhC3ydOUS9YV_SwVz0i4LKqlOLGNUukYHVMsJRF1b-iWeUGcNlXyYCeK"
-OAUTH_REDIRECT_URI = "https://api.connectlife.io/swagger/oauth2-redirect.html"
-
-APP_ID = "47110565134383"
-APP_SECRET = "yOzhz6junYno-nmULM3Wr7PU_dpSZN22ZdluvVWZ4uW5ZwwG8fIGCHTbrhcnU-iv"
-SIGN_MAGIC = "D9519A4B756946F081B7BB5B5E8D1197"
-
-PUBLIC_KEY_PEM = """-----BEGIN PUBLIC KEY-----
-MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAyyWrNG6q475HIHu7sMVu
-vHof6vlgPeixmxa4EL/UsvVvHPz33NnWoQetQqit9TBNzUjMXw0KlY9PXM4iqHUU
-U+dSyNDq1jZWIiJ2C2FccppswJtIKL3NRMFvT9PFh6NlP/4FUcQKojgKFbF7Kacc
-JPKYHlwaO7qgoIjLxAHlSOXGpucJcOkPzT2EqsSVnW8sn8kenvNmghXDayhgxsh6
-AyxK4kehJplEnmX/iYCfNoFXknGcLqFWYccgBz3fybvx30C/0IgU1980L8QsUAv5
-esZmN8ugnbRgLRxKRlkQQLxQAiZMZdKTAx665YflT3YMHJvEFE8c2XFgoxHzSMc4
-BwIDAQAB
------END PUBLIC KEY-----
-"""
 
 # Temperature unit codes (from ConnectLife API PHP enum: celsius='0', fahrenheit='1')
 TEMP_CODE_CELSIUS = 0
