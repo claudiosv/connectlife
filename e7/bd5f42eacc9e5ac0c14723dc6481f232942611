@@ -1,0 +1,27 @@
+custom_components/connectlife_claudio_wrapper/strings.json
+  s_ff715d7046dd99::t_d32c7acb69bc0b 38-52
+custom_components/connectlife_claudio_wrapper/translations/en.json
+  s_ff715d7046dd99::t_f3658783b6b8cb 38-52
+README.md
+  s_ff715d7046dd99::t_6673ed6d6eae04 11-12
+  s_ff715d7046dd99::t_6fb7958224cb52 33,40-44
+  s_ff715d7046dd99::t_b3b97914ef0a33 84,88-93
+cli.py
+  s_ff715d7046dd99::t_76281369eb22e5 24
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "e7bd5f42eacc9e5ac0c14723dc6481f232942611",
+  "prompts": {},
+  "sessions": {
+    "s_ff715d7046dd99": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cdaeb340-7654-48e4-8fc9-6194612a3390",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "Claudio Spiess <claudiosv@users.noreply.github.com>"
+    }
+  }
+}
