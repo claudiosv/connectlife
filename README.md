@@ -88,3 +88,33 @@ If a device's feature code is not found in the JSON the integration falls back t
 2. Polls the device list every 60 seconds via that library and exposes each AC as a HA climate entity.
 3. Sends property-update requests through the same library when you change a setting in HA.
 4. Wraps those calls with retry/backoff on transient gateway errors (HTTP 429/500/502/503/504).
+
+## Development
+
+This repo is laid out as `custom_components/connectlife/` (the integration
+itself) plus a `tests/` directory and a dev-only `cli.py` at the root.
+
+```bash
+uv sync                 # install runtime + dev dependencies
+uv run pytest           # run the test suite
+uv run ruff check .     # lint
+uv run pyright .        # type-check
+uv run python cli.py --help   # ad-hoc CLI against a real ConnectLife account
+```
+
+### Tests
+
+The test suite (`tests/`) is end-to-end: it boots a real, in-process Home
+Assistant core via
+[`pytest-homeassistant-custom-component`](https://pypi.org/project/pytest-homeassistant-custom-component/),
+loads this repo's own `custom_components/connectlife`, and drives it against
+`connectlife`'s bundled aiohttp test server instead of the real
+ConnectLife/HijuConn servers — so the full path (config flow → coordinator →
+climate/fan/sensor/switch/button entities → service calls → API client →
+gateway request) is exercised with only the network boundary faked out. No
+Docker or separately-running Home Assistant instance is required; everything
+runs in-process under `pytest`.
+
+`tests/test_api.py` additionally drives `ConnectLifeApi` directly against the
+same test gateway to pin down its retry/backoff and error-translation
+behavior (transient gateway errors, rate-limit exhaustion, auth failures).

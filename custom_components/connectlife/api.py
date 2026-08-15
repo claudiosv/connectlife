@@ -110,10 +110,14 @@ class ConnectLifeApi:
         username: str,
         password: str,
         hass: HomeAssistant | None = None,
+        test_server: str | None = None,
     ) -> None:
         # Public: the dev CLI (cli.py) reaches into this for direct login /
         # token inspection outside the retry/logging wrapper below.
-        self.client = _UpstreamConnectLifeApi(username, password)
+        # `test_server` is forwarded as-is to the upstream client — it points
+        # every endpoint (login, JWT, OAuth, gateway) at a base URL instead of
+        # the real ConnectLife servers; used by the test suite.
+        self.client = _UpstreamConnectLifeApi(username, password, test_server=test_server)
         self._username = username
         self._hass = hass
         # Most recently fetched statusList per device (puid), used to log

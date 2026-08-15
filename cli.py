@@ -26,11 +26,12 @@ from typing import Annotated
 sys.path.insert(0, str(Path(__file__).parent))
 
 import typer
-from custom_components.connectlife.api import ConnectLifeApi
-from custom_components.connectlife.const import TEMP_CODE_FAHRENHEIT
 from rich import print_json
 from rich.console import Console
 from rich.table import Table
+
+from custom_components.connectlife.api import ConnectLifeApi
+from custom_components.connectlife.const import TEMP_CODE_FAHRENHEIT
 
 app = typer.Typer(no_args_is_help=True, pretty_exceptions_show_locals=False)
 console = Console()
