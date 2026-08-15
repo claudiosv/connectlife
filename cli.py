@@ -30,8 +30,9 @@ from rich import print_json
 from rich.console import Console
 from rich.table import Table
 
-from custom_components.connectlife.api import ConnectLifeApi
-from custom_components.connectlife.const import TEMP_CODE_FAHRENHEIT
+from legacy_cli_api import LegacyConnectLifeApi as ConnectLifeApi
+
+TEMP_CODE_FAHRENHEIT = 1
 
 app = typer.Typer(no_args_is_help=True, pretty_exceptions_show_locals=False)
 console = Console()

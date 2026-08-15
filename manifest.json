@@ -6,12 +6,11 @@
     "documentation": "https://github.com/claudiosv/connectlife",
     "issue_tracker": "https://github.com/claudiosv/connectlife/issues",
     "requirements": [
-        "cryptography>=42.0.0",
         "tenacity>=8.2.0"
     ],
     "dependencies": [],
     "after_dependencies": ["matter"],
     "codeowners": [],
-    "iot_class": "cloud_polling",
+    "iot_class": "cloud_push",
     "quality_scale": "silver"
 }

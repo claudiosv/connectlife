@@ -4,21 +4,21 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import hmac
 import json
 import logging
-import secrets
+import re
 import time
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
-    from homeassistant.helpers.storage import Store
+
+    from .oauth2 import OAuth2Session
 
 import aiohttp
-from cryptography.hazmat.primitives import serialization
-from cryptography.hazmat.primitives.asymmetric import padding
 from tenacity import (
     AsyncRetrying,
     RetryCallState,
@@ -29,19 +29,12 @@ from tenacity import (
 
 from .const import (
     AC_DEVICE_TYPE_CODES,
-    APP_ID,
-    APP_SECRET,
     BASE_URL,
-    GIGYA_API_KEY,
-    GIGYA_GMID,
-    OAUTH_CLIENT_ID,
-    OAUTH_CLIENT_SECRET,
-    OAUTH_REDIRECT_URI,
-    PUBLIC_KEY_PEM,
+    CLIENT_ID,
+    CLIENT_SECRET,
     RETRY_ATTEMPTS,
     RETRY_BACKOFF_BASE,
     RETRY_BACKOFF_MAX,
-    SIGN_MAGIC,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -70,6 +63,17 @@ def _redact(data: dict[str, Any] | None) -> dict[str, Any] | None:
     if data is None:
         return None
     return {k: ("***" if k in _SENSITIVE_KEYS else v) for k, v in data.items()}
+
+
+def _redact_body(body: str | None) -> dict[str, Any] | None:
+    """Best-effort redaction of a JSON request body string for logging."""
+    if not body:
+        return None
+    try:
+        parsed = json.loads(body)
+    except json.JSONDecodeError:
+        return None
+    return _redact(parsed) if isinstance(parsed, dict) else parsed
 
 
 _DIFF_IGNORE_KEYS = {
@@ -137,27 +141,6 @@ def _retry_wait(retry_state: RetryCallState) -> float:
     )
 
 
-def _mono_to_unix(mono_exp: float) -> float:
-    """Convert a monotonic expiry timestamp to an absolute unix timestamp."""
-    return time.time() + (mono_exp - time.monotonic())
-
-
-def _unix_to_mono(unix_exp: float) -> float:
-    """Convert an absolute unix expiry timestamp to a monotonic timestamp."""
-    return time.monotonic() + (unix_exp - time.time())
-
-
-def _jwt_monotonic_expiry(token: str) -> float:
-    """Return the monotonic time at which a JWT expires, or 0 on any parse error."""
-    try:
-        payload_b64 = token.split(".")[1]
-        payload_b64 += "=" * (-len(payload_b64) % 4)
-        exp: int = json.loads(base64.urlsafe_b64decode(payload_b64)).get("exp", 0)
-        return time.monotonic() + (exp - time.time())
-    except Exception:
-        return 0.0
-
-
 def _parse_retry_after(headers: Any) -> float | None:
     value = headers.get("Retry-After")
     if value is None:
@@ -173,34 +156,17 @@ class ConnectLifeApi:
 
     def __init__(
         self,
-        session: aiohttp.ClientSession,
-        username: str,
-        password: str,
+        oauth_session: OAuth2Session,
         hass: HomeAssistant | None = None,
     ) -> None:
-        self._session = session
-        self._username = username
-        self._password = password
+        self.oauth_session = oauth_session
+        self._session = oauth_session.session
         self._hass = hass
-        self._access_token: str | None = None
-        self._token_expires_at: float = 0.0
-        self._login_token: str | None = None
-        self._login_token_expires_at: float = 0.0
-        self._uid: str | None = None
-        self._id_token: str | None = None
-        self._id_token_expires_at: float = 0.0
-        self._refresh_token: str | None = None
-        self._store: Store | None = None
-        self._cache_loaded = False
+        self._source_id: str | None = None
         # Most recently fetched statusList per device (puid), used to log
         # what actually changed on update_device()/get_devices() calls
         # instead of the full payload/state every time.
         self._last_status: dict[str, dict[str, Any]] = {}
-        if hass is not None:
-            from homeassistant.helpers.storage import Store as _Store
-
-            self._store = _Store(hass, 1, f"connectlife.{username}.tokens")
-        self._public_key = serialization.load_pem_public_key(PUBLIC_KEY_PEM.encode())
 
     # ------------------------------------------------------------------
     # Retry helper
@@ -211,20 +177,11 @@ class ConnectLifeApi:
         method: Literal["GET", "POST"],
         url: str,
         *,
-        params: dict[str, Any] | None = None,
-        json_body: dict[str, Any] | None = None,
-        form: dict[str, Any] | None = None,
+        headers: dict[str, str],
+        data: str | None = None,
     ) -> Any:
         """Make an HTTP request with tenacity-managed retries and backoff."""
-        headers = {"User-Agent": _USER_AGENT}
-        _LOGGER.debug(
-            "-> %s %s params=%s json=%s form=%s",
-            method,
-            url,
-            _redact(params),
-            _redact(json_body),
-            _redact(form),
-        )
+        _LOGGER.debug("-> %s %s data=%s", method, url, _redact_body(data))
 
         try:
             async for attempt in AsyncRetrying(
@@ -238,9 +195,7 @@ class ConnectLifeApi:
                     async with self._session.request(
                         method,
                         url,
-                        params=params,
-                        json=json_body,
-                        data=form,
+                        data=data,
                         headers=headers,
                     ) as resp:
                         if resp.status in _RETRYABLE_STATUS:
@@ -268,10 +223,7 @@ class ConnectLifeApi:
                             json_log = {
                                 "method": method,
                                 "url": url,
-                                "params": params,
-                                "json": json_body,
-                                "data": form,
-                                "headers": headers,
+                                "data": data,
                                 "resp_status": resp.status,
                                 "response": response_json,
                             }
@@ -306,231 +258,115 @@ class ConnectLifeApi:
             raise ConnectLifeApiError(f"Network error: {exc}") from exc
 
     # ------------------------------------------------------------------
-    # Authentication
+    # Request signing (HMAC-SHA256, matching Connectlife-LLC/HomeAssistantPlugin)
     # ------------------------------------------------------------------
 
-    async def _load_token_cache(self) -> None:
-        """Load persisted tokens from storage on first call (no-op thereafter)."""
-        if self._store is None or self._cache_loaded:
-            return
-        self._cache_loaded = True
-        data: dict[str, Any] = await self._store.async_load() or {}
-        if not data:
-            return
-        now = time.time()
-        if (lt := data.get("login_token")) and data.get("login_token_exp", 0) > now:
-            self._login_token = lt
-            self._login_token_expires_at = _unix_to_mono(data["login_token_exp"])
-            self._uid = data.get("uid")
-        if (it := data.get("id_token")) and data.get("id_token_exp", 0) > now:
-            self._id_token = it
-            self._id_token_expires_at = _unix_to_mono(data["id_token_exp"])
-        if rt := data.get("refresh_token"):
-            self._refresh_token = rt
-        if (at := data.get("access_token")) and data.get("access_token_exp", 0) > now:
-            self._access_token = at
-            self._token_expires_at = _unix_to_mono(data["access_token_exp"])
-        _LOGGER.debug("Token cache restored from storage")
+    @staticmethod
+    def _sign_hmac(secret: str, base_string: str) -> str:
+        digest = hmac.new(secret.encode(), base_string.encode(), hashlib.sha256).digest()
+        return base64.b64encode(digest).decode()
 
-    async def _save_token_cache(self) -> None:
-        """Persist current tokens to storage."""
-        if self._store is None:
-            return
-        mono = time.monotonic()
-        data: dict[str, Any] = {}
-        if self._login_token:
-            data["login_token"] = self._login_token
-            data["login_token_exp"] = _mono_to_unix(self._login_token_expires_at)
-            data["uid"] = self._uid
-        if self._id_token and mono < self._id_token_expires_at:
-            data["id_token"] = self._id_token
-            data["id_token_exp"] = _mono_to_unix(self._id_token_expires_at)
-        if self._refresh_token:
-            data["refresh_token"] = self._refresh_token
-        if self._access_token and mono < self._token_expires_at:
-            data["access_token"] = self._access_token
-            data["access_token_exp"] = _mono_to_unix(self._token_expires_at)
-        await self._store.async_save(data)
-        _LOGGER.debug("Token cache saved to storage")
+    @staticmethod
+    def _body_digest(body: str | None) -> str:
+        if body:
+            return base64.b64encode(hashlib.sha256(body.encode()).digest()).decode()
+        # SHA-256 of an empty string, matching the plugin's fixed empty-body digest.
+        return "47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU="
 
-    async def _ensure_token(self) -> str:
-        await self._load_token_cache()
-        if self._access_token and time.monotonic() < self._token_expires_at:
-            return self._access_token
-        _LOGGER.debug("Fetching new ConnectLife access token")
-        self._access_token = await self._fetch_access_token()
-        self._token_expires_at = time.monotonic() + 86000  # 24 h with small buffer
-        await self._save_token_cache()
-        return self._access_token
+    @staticmethod
+    def _gmt_date() -> str:
+        return datetime.now(UTC).strftime("%a, %d %b %Y %H:%M:%S GMT")
 
-    async def _gigya_login(self) -> None:
-        """POST to accounts.login and cache the resulting login_token and UID."""
-        login_data = await self._request(
-            "POST",
-            "https://accounts.eu1.gigya.com/accounts.login",
-            form={
-                "loginID": self._username,
-                "password": self._password,
-                "APIKey": GIGYA_API_KEY,
-                "gmid": GIGYA_GMID,
-            },
-        )
-        session_info = login_data.get("sessionInfo") or {}
-        cookie_value = session_info.get("cookieValue")
-        if not cookie_value:
-            raise ConnectLifeAuthError(
-                f"Gigya login failed. Response: {json.dumps(login_data, indent=4)}"
-            )
-        # Use the server-reported max-age if present; fall back to 13 days.
-        max_age = session_info.get("cookieMaxAge") or (13 * 24 * 3600)
-        self._login_token = cookie_value
-        self._login_token_expires_at = time.monotonic() + int(max_age)
-        self._uid = login_data["UID"]
-        _LOGGER.debug("Gigya login_token cached for %s s", max_age)
-        await self._save_token_cache()
+    @staticmethod
+    def _path_for_signing(url: str) -> str:
+        """Strip the scheme+host, keeping path and query string."""
+        return re.sub(r"^https://[^/]*", "", url)
 
-    async def _fetch_access_token(self) -> str:
-        """Obtain a fresh access_token, reusing cached tokens at each step where possible."""
-        # Fastest path: use refresh_token to skip steps 1-3 entirely.
-        if self._refresh_token:
-            try:
-                return await self._refresh_access_token()
-            except ConnectLifeAuthError:
-                _LOGGER.debug("refresh_token rejected; falling back to full flow")
-                self._refresh_token = None
+    def _get_source_id(self) -> str:
+        if not self._source_id:
+            self._source_id = "td001002000" + hashlib.md5(
+                f"{time.monotonic()}-{id(self)}".encode()
+            ).hexdigest()
+        return self._source_id
 
-        # Ensure we have a valid Gigya login_token (step 1).
-        if not self._login_token or time.monotonic() >= self._login_token_expires_at:
-            await self._gigya_login()
-
-        try:
-            return await self._exchange_login_token_for_access_token()
-        except ConnectLifeAuthError:
-            # login_token was revoked early; force a fresh login and retry once.
-            _LOGGER.debug("login_token rejected; performing fresh Gigya login")
-            self._login_token = None
-            self._id_token = None
-            await self._gigya_login()
-            return await self._exchange_login_token_for_access_token()
-
-    async def _refresh_access_token(self) -> str:
-        """Use a stored refresh_token to get a new access_token (skips steps 1-3)."""
-        token_data = await self._request(
-            "POST",
-            "https://oauth.hijuconn.com/oauth/token",
-            form={
-                "client_id": OAUTH_CLIENT_ID,
-                "client_secret": OAUTH_CLIENT_SECRET,
-                "grant_type": "refresh_token",
-                "refresh_token": self._refresh_token,
-            },
-        )
-        access_token = token_data.get("access_token")
-        if not access_token:
-            raise ConnectLifeAuthError(
-                f"Failed to refresh access token. Response: {json.dumps(token_data, indent=4)}"
-            )
-        if new_refresh := token_data.get("refresh_token"):
-            self._refresh_token = new_refresh
-        return access_token
-
-    async def _exchange_login_token_for_access_token(self) -> str:
-        """Steps 2-4: login_token → JWT → OAuth code → access_token."""
-        # Step 2: Get JWT — skip if we have a cached id_token that's still valid.
-        if not self._id_token or time.monotonic() >= self._id_token_expires_at:
-            jwt_data = await self._request(
-                "POST",
-                "https://accounts.eu1.gigya.com/accounts.getJWT",
-                form={
-                    "APIKey": GIGYA_API_KEY,
-                    "gmid": GIGYA_GMID,
-                    "login_token": self._login_token,
-                },
-            )
-            id_token = jwt_data.get("id_token")
-            if not id_token:
-                raise ConnectLifeAuthError(
-                    f"Failed to get JWT. Response: {json.dumps(jwt_data, indent=4)}"
-                )
-            self._id_token = id_token
-            self._id_token_expires_at = _jwt_monotonic_expiry(id_token)
-            _LOGGER.debug(
-                "id_token cached, expires in %.0fs",
-                self._id_token_expires_at - time.monotonic(),
-            )
-        else:
-            _LOGGER.debug("Reusing cached id_token")
-
-        # Step 3: Exchange JWT for OAuth authorization code
-        auth_data = await self._request(
-            "POST",
-            "https://oauth.hijuconn.com/oauth/authorize",
-            json_body={
-                "client_id": OAUTH_CLIENT_ID,
-                "idToken": self._id_token,
-                "response_type": "code",
-                "redirect_uri": OAUTH_REDIRECT_URI,
-                "thirdType": "CDC",
-                "thirdClientId": self._uid,
-            },
-        )
-        code = auth_data.get("code")
-        if not code:
-            # id_token may have been rejected; clear it so next attempt fetches a fresh one.
-            self._id_token = None
-            raise ConnectLifeAuthError(
-                f"Failed to get OAuth code. Response: {json.dumps(auth_data, indent=4)}"
-            )
-
-        # Step 4: Exchange code for access token
-        token_data = await self._request(
-            "POST",
-            "https://oauth.hijuconn.com/oauth/token",
-            form={
-                "client_id": OAUTH_CLIENT_ID,
-                "code": code,
-                "grant_type": "authorization_code",
-                "client_secret": OAUTH_CLIENT_SECRET,
-                "redirect_uri": OAUTH_REDIRECT_URI,
-            },
-        )
-        access_token = token_data.get("access_token")
-        if not access_token:
-            raise ConnectLifeAuthError(
-                f"Failed to get access token. Response: {json.dumps(token_data, indent=4)}"
-            )
-        if refresh_token := token_data.get("refresh_token"):
-            self._refresh_token = refresh_token
-            _LOGGER.debug("refresh_token stored")
-        return access_token
-
-    # ------------------------------------------------------------------
-    # Request signing
-    # ------------------------------------------------------------------
-
-    def _sign(self, data: dict[str, Any]) -> str:
-        sorted_items = sorted((k, v) for k, v in data.items() if k != "sign")
-        parts = []
-        for k, v in sorted_items:
-            if isinstance(v, (dict, list)):
-                v = json.dumps(v, separators=(",", ":"))
-            parts.append(f"{k}={v}")
-        to_hash = "&".join(parts) + SIGN_MAGIC
-        _LOGGER.debug("Sign base string: %s", to_hash)
-        digest = hashlib.sha256(to_hash.encode()).digest()
-        encrypted = self._public_key.encrypt(digest, padding.PKCS1v15())
-        return base64.b64encode(encrypted).decode()
-
-    def _common_params(self) -> dict[str, Any]:
-        return {
-            "appId": APP_ID,
-            "appSecret": APP_SECRET,
-            "languageId": "12",
-            "randStr": secrets.token_hex(16),
-            "timeStamp": str(int(time.time() * 1000)),
-            "timezone": "1.0",
-            "version": "5.0",
+    async def _system_parameters(self, hass: HomeAssistant | None) -> dict[str, Any]:
+        timestamp = int(time.time() * 1000)
+        random_str = hashlib.md5(f"{timestamp}-{id(self)}".encode()).hexdigest()
+        tz = str(hass.config.time_zone) if hass and hass.config.time_zone else "UTC"
+        params: dict[str, Any] = {
+            "timeStamp": str(timestamp),
+            "version": "8.1",
+            "languageId": "1",
+            "timezone": tz,
+            "randStr": random_str,
+            "appId": CLIENT_ID,
+            "sourceId": self._get_source_id(),
+            "platformId": 5,
         }
+        access_token = await self.oauth_session.async_get_access_token()
+        if access_token:
+            params["accessToken"] = access_token
+        return params
+
+    async def _api_request(
+        self,
+        method: Literal["GET", "POST"],
+        path: str,
+        data: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Make a signed request to a ConnectLife API endpoint."""
+        try:
+            await self.oauth_session.async_ensure_token_valid()
+        except ValueError as exc:
+            raise ConnectLifeAuthError(f"OAuth token unavailable: {exc}") from exc
+
+        request_data: dict[str, Any] = dict(data or {})
+        request_data.update(await self._system_parameters(self._hass))
+
+        url = f"{BASE_URL}{path}"
+        headers: dict[str, str] = {}
+        body: str | None
+
+        if method == "GET":
+            headers["accessToken"] = request_data.pop("accessToken", "")
+            query = "&".join(
+                f"{k}={json.dumps(v, separators=(',', ':')) if isinstance(v, (dict, list)) else v}"
+                for k, v in request_data.items()
+            )
+            url = f"{url}?{query}" if query else url
+            body = None
+        else:
+            body = json.dumps(request_data)
+
+        client_id = CLIENT_ID
+        header_key = "hi-params-encrypt"
+        gmt_date = self._gmt_date()
+        base_string = (
+            f"{client_id}\n{method} {self._path_for_signing(url)}\n"
+            f"date: {gmt_date}\n{header_key}: {client_id}\n"
+        )
+        signature = self._sign_hmac(CLIENT_SECRET, base_string)
+
+        headers.update({
+            header_key: client_id,
+            "Date": gmt_date,
+            "Authorization": (
+                f'Signature signature="{signature}", keyId="{client_id}",'
+                f'algorithm="hmac-sha256", headers="@request-target date {header_key}"'
+            ),
+            "Content-Type": "application/json",
+            "Digest": f"SHA-256={self._body_digest(body)}",
+            "User-Agent": _USER_AGENT,
+        })
+
+        response = await self._request(method, url, headers=headers, data=body)
+        if not isinstance(response, dict):
+            raise ConnectLifeApiError(f"Unexpected response format: {response}")
+        if response.get("resultCode") not in (0, None):
+            raise ConnectLifeApiError(
+                f"API error: {response.get('msg', 'Unknown error')}"
+            )
+        return response
 
     # ------------------------------------------------------------------
     # Public API methods
@@ -538,15 +374,7 @@ class ConnectLifeApi:
 
     async def get_devices(self) -> list[dict[str, Any]]:
         """Fetch all AC devices from the ConnectLife API."""
-        token = await self._ensure_token()
-        params = self._common_params() | {"accessToken": token}
-        params["sign"] = self._sign(params)
-
-        body = await self._request(
-            "GET",
-            f"{BASE_URL}/clife-svc/pu/get_device_status_list",
-            params=params,
-        )
+        body = await self._api_request("GET", "/clife-svc/pu/get_device_status_list")
 
         _LOGGER.debug(
             "get_device_status_list raw response: %s", json.dumps(body, indent=4)
@@ -619,28 +447,25 @@ class ConnectLifeApi:
         return result
 
     async def get_device_energy(self, device_id: str) -> dict[str, Any]:
-        token = await self._ensure_token()
         today = date.today().isoformat()
-        payload = self._common_params() | {
-            "accessToken": token,
-            "puid": device_id,
-            "statType": "day",
-            "dateEnd": today,
-            "dateStart": today,
-            "curve": "1",
-            "deviceType": "009",
-            "featureCode": "117",
-        }
-        payload["sign"] = self._sign(payload)
-        body = await self._request(
-            "POST", f"{BASE_URL}/clife-svc/pu/air_duct_energy", json_body=payload
+        body = await self._api_request(
+            "POST",
+            "/clife-svc/pu/air_duct_energy",
+            data={
+                "puid": device_id,
+                "statType": "day",
+                "dateEnd": today,
+                "dateStart": today,
+                "curve": "1",
+                "deviceType": "009",
+                "featureCode": "117",
+            },
         )
         return body.get("response", {})
 
     async def update_device(
         self, device_id: str, properties: dict[str, Any]
     ) -> dict[str, Any]:
-        token = await self._ensure_token()
         # The gateway expects property values as strings (e.g. {"t_temp": "75"}),
         # not JSON numbers/booleans — sending raw ints causes "Signature check
         # fail" even though the signing algorithm itself is otherwise correct.
@@ -659,14 +484,10 @@ class ConnectLifeApi:
                 device_id,
                 properties,
             )
-        payload = self._common_params() | {
-            "accessToken": token,
-            "puid": device_id,
-            "properties": properties,
-        }
-        payload["sign"] = self._sign(payload)
-        body = await self._request(
-            "POST", f"{BASE_URL}/device/pu/property/set", json_body=payload
+        body = await self._api_request(
+            "POST",
+            "/device/pu/property/set",
+            data={"puid": device_id, "properties": properties},
         )
         result = body.get("response", {})
         _LOGGER.debug("Update device result: %s", result)
@@ -674,11 +495,9 @@ class ConnectLifeApi:
 
     async def validate_credentials(self) -> bool:
         try:
-            self._access_token = None
-            self._token_expires_at = 0.0
-            await self._ensure_token()
-            _LOGGER.debug("Credential validation succeeded for %s", self._username)
+            await self.oauth_session.async_ensure_token_valid()
+            _LOGGER.debug("Credential validation succeeded")
             return True
-        except ConnectLifeAuthError:
-            _LOGGER.debug("Credential validation failed for %s", self._username)
+        except (ValueError, ConnectLifeAuthError, ConnectLifeApiError) as exc:
+            _LOGGER.debug("Credential validation failed: %s", exc)
             return False

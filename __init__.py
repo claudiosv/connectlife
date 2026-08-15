@@ -5,15 +5,9 @@ from __future__ import annotations
 import logging
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import (
-    CONF_PASSWORD,
-    CONF_USERNAME,
-    EVENT_HOMEASSISTANT_STARTED,
-    Platform,
-)
+from homeassistant.const import EVENT_HOMEASSISTANT_STARTED, Platform
 from homeassistant.core import Event, HomeAssistant
-from homeassistant.helpers import entity_platform
-from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from homeassistant.helpers import config_entry_oauth2_flow, entity_platform
 
 from .api import ConnectLifeApi
 from .const import (
@@ -27,6 +21,8 @@ from .const import (
     UPDATE_INTERVAL_SECONDS,
 )
 from .coordinator import ConnectLifeCoordinator
+from .oauth2 import ConnectLifeOAuth2Implementation, OAuth2Session
+from .websocket import ConnectLifeWebSocket
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -114,24 +110,44 @@ async def _async_patch_matter_dry_fan_support(
     _LOGGER.debug("Recalculated features for %d Matter climate entities", patched)
 
 
+async def async_setup(hass: HomeAssistant, config: dict) -> bool:
+    """Register the ConnectLife OAuth2 implementation.
+
+    Must run unconditionally on every startup (not just when the config flow
+    itself runs) — config_entry_oauth2_flow's implementation registry is
+    in-memory, so a restarted HA needs this to re-populate it before
+    async_setup_entry can resolve an existing entry's implementation.
+    """
+    config_entry_oauth2_flow.async_register_implementation(
+        hass, DOMAIN, ConnectLifeOAuth2Implementation(hass)
+    )
+    return True
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up ConnectLife from a config entry."""
     cfg = entry_config(entry)
     _apply_debug_logging(cfg)
     _LOGGER.debug("Setting up ConnectLife entry %s (title=%r)", entry.entry_id, entry.title)
-    session = async_get_clientsession(hass)
-    api = ConnectLifeApi(
-        session=session,
-        username=cfg[CONF_USERNAME],
-        password=cfg[CONF_PASSWORD],
-        hass=hass,
+
+    implementation = await config_entry_oauth2_flow.async_get_config_entry_implementation(
+        hass, entry
     )
+    ha_oauth_session = config_entry_oauth2_flow.OAuth2Session(hass, entry, implementation)
+    await ha_oauth_session.async_ensure_token_valid()
+    oauth_session = OAuth2Session(hass, implementation, token=dict(entry.data.get("token", {})))
+
+    api = ConnectLifeApi(oauth_session=oauth_session, hass=hass)
 
     poll_interval = int(cfg.get(CONF_POLL_INTERVAL, UPDATE_INTERVAL_SECONDS))
     coordinator = ConnectLifeCoordinator(hass, api, poll_interval)
     await coordinator.async_config_entry_first_refresh()
 
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = coordinator
+
+    websocket = ConnectLifeWebSocket(hass, api, coordinator.async_handle_push_update)
+    await websocket.async_connect()
+    coordinator.websocket = websocket
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
@@ -176,5 +192,8 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     _LOGGER.debug("Unloading ConnectLife entry %s", entry.entry_id)
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if unload_ok:
-        hass.data[DOMAIN].pop(entry.entry_id)
+        coordinator: ConnectLifeCoordinator = hass.data[DOMAIN].pop(entry.entry_id)
+        if coordinator.websocket is not None:
+            await coordinator.websocket.async_disconnect()
+        await coordinator.api.oauth_session.close()
     return unload_ok
