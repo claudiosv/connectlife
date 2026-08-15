@@ -6,17 +6,10 @@ import json
 import logging
 from typing import Any
 
-import aiohttp
 import voluptuous as vol
-from homeassistant.config_entries import (
-    ConfigEntry,
-    ConfigFlow,
-    ConfigFlowResult,
-    OptionsFlow,
-)
-from homeassistant.const import CONF_PASSWORD, CONF_USERNAME
+from homeassistant.config_entries import ConfigEntry, ConfigFlowResult, OptionsFlow
 from homeassistant.core import callback
-from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from homeassistant.helpers import config_entry_oauth2_flow
 from homeassistant.helpers.selector import (
     EntitySelector,
     EntitySelectorConfig,
@@ -25,7 +18,6 @@ from homeassistant.helpers.selector import (
     NumberSelectorMode,
 )
 
-from .api import ConnectLifeApi, ConnectLifeAuthError
 from .const import (
     COMMAND_REFRESH_DELAY_SECONDS,
     CONF_BEEPING,
@@ -112,19 +104,6 @@ _DEFAULT_DEVICES_CONFIG = json.dumps({
     },
 })
 
-STEP_USER_SCHEMA = vol.Schema({
-    vol.Required(CONF_USERNAME): str,
-    vol.Required(CONF_PASSWORD): str,
-    vol.Optional(CONF_BEEPING, default=False): bool,
-    vol.Optional(CONF_TEMPERATURE_UNIT, default=TEMP_UNIT_CELSIUS): vol.In([
-        TEMP_UNIT_CELSIUS,
-        TEMP_UNIT_FAHRENHEIT,
-    ]),
-    vol.Optional(CONF_TEMPERATURE_SENSORS, default=False): bool,
-    vol.Optional(CONF_DEVICES_CONFIG, default=_DEFAULT_DEVICES_CONFIG): str,
-})
-
-
 def _normalize_log_level(value: Any) -> str:
     """Migrate the old on/off debug_logging checkbox's stored bool values."""
     if value is True:
@@ -137,7 +116,6 @@ def _normalize_log_level(value: Any) -> str:
 def _options_schema(current: dict[str, Any]) -> vol.Schema:
     """Build the options schema pre-filled with current values."""
     return vol.Schema({
-        vol.Required(CONF_PASSWORD, default=current.get(CONF_PASSWORD, "")): str,
         vol.Optional(CONF_BEEPING, default=current.get(CONF_BEEPING, False)): bool,
         vol.Optional(
             CONF_TEMPERATURE_UNIT,
@@ -296,10 +274,21 @@ def _options_schema(current: dict[str, Any]) -> vol.Schema:
     })
 
 
-class ConnectLifeConfigFlow(ConfigFlow, domain=DOMAIN):
-    """Handle the ConnectLife config flow."""
+class ConnectLifeConfigFlow(
+    config_entry_oauth2_flow.AbstractOAuth2FlowHandler, domain=DOMAIN
+):
+    """Handle the ConnectLife config flow via OAuth2 browser login."""
 
+    DOMAIN = DOMAIN
     VERSION = 1
+
+    @property
+    def logger(self) -> logging.Logger:
+        return _LOGGER
+
+    @property
+    def extra_authorize_data(self) -> dict:
+        return {}
 
     @staticmethod
     @callback
@@ -310,47 +299,23 @@ class ConnectLifeConfigFlow(ConfigFlow, domain=DOMAIN):
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        errors: dict[str, str] = {}
+        """Handle a flow start: single instance, then hand off to OAuth2."""
+        await self.async_set_unique_id(DOMAIN)
+        if self._async_current_entries():
+            return self.async_abort(reason="single_instance_allowed")
+        return await super().async_step_user(user_input)
 
-        if user_input is not None:
-            devices_config_raw = user_input.get(CONF_DEVICES_CONFIG, "{}")
-            try:
-                json.loads(devices_config_raw)
-            except json.JSONDecodeError:
-                errors[CONF_DEVICES_CONFIG] = "invalid_json"
-            else:
-                await self.async_set_unique_id(user_input[CONF_USERNAME].lower())
-                self._abort_if_unique_id_configured()
-
-                session = async_get_clientsession(self.hass)
-                api = ConnectLifeApi(
-                    session,
-                    user_input[CONF_USERNAME],
-                    user_input[CONF_PASSWORD],
-                    self.hass,
-                )
-                try:
-                    valid = await api.validate_credentials()
-                    if not valid:
-                        errors["base"] = "invalid_auth"
-                except ConnectLifeAuthError:
-                    errors["base"] = "invalid_auth"
-                except aiohttp.ClientError:
-                    errors["base"] = "cannot_connect"
-                except Exception:
-                    _LOGGER.exception("Unexpected error during credential validation")
-                    errors["base"] = "unknown"
-
-                if not errors:
-                    return self.async_create_entry(
-                        title=user_input[CONF_USERNAME],
-                        data=user_input,
-                    )
-
-        return self.async_show_form(
-            step_id="user",
-            data_schema=STEP_USER_SCHEMA,
-            errors=errors,
+    async def async_oauth_create_entry(self, data: dict) -> ConfigFlowResult:
+        """Create the config entry once the OAuth2 token exchange completes."""
+        return self.async_create_entry(
+            title="ConnectLife",
+            data={
+                **data,
+                CONF_BEEPING: False,
+                CONF_TEMPERATURE_UNIT: TEMP_UNIT_CELSIUS,
+                CONF_TEMPERATURE_SENSORS: False,
+                CONF_DEVICES_CONFIG: _DEFAULT_DEVICES_CONFIG,
+            },
         )
 
 
@@ -375,36 +340,7 @@ class ConnectLifeOptionsFlow(OptionsFlow):
             except json.JSONDecodeError:
                 errors[CONF_DEVICES_CONFIG] = "invalid_json"
             else:
-                # Re-validate credentials only if the password changed
-                new_password = user_input[CONF_PASSWORD]
-                if new_password != current.get(CONF_PASSWORD):
-                    session = async_get_clientsession(self.hass)
-                    api = ConnectLifeApi(
-                        session,
-                        self._config_entry.data[CONF_USERNAME],
-                        new_password,
-                        self.hass,
-                    )
-                    try:
-                        valid = await api.validate_credentials()
-                        if not valid:
-                            errors["base"] = "invalid_auth"
-                    except ConnectLifeAuthError:
-                        errors["base"] = "invalid_auth"
-                    except aiohttp.ClientError:
-                        errors["base"] = "cannot_connect"
-                    except Exception:
-                        _LOGGER.exception(
-                            "Unexpected error during credential validation"
-                        )
-                        errors["base"] = "unknown"
-
                 if not errors:
-                    # Persist options and update the config entry data with new password
-                    self.hass.config_entries.async_update_entry(
-                        self._config_entry,
-                        data={**self._config_entry.data, CONF_PASSWORD: new_password},
-                    )
                     return self.async_create_entry(
                         title="",
                         data={
