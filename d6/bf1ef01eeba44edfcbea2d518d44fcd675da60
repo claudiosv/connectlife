@@ -1,0 +1,21 @@
+custom_components/claudio_hisense/manifest.json
+  s_ff715d7046dd99::t_8671e6d20232cd 4
+CHANGELOG.md
+  s_ff715d7046dd99::t_9b74b8fbcc0afc 6-12
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "d6bf1ef01eeba44edfcbea2d518d44fcd675da60",
+  "prompts": {},
+  "sessions": {
+    "s_ff715d7046dd99": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cdaeb340-7654-48e4-8fc9-6194612a3390",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "Claudio Spiess <claudiosv@users.noreply.github.com>"
+    }
+  }
+}
