@@ -1,0 +1,19 @@
+custom_components/claudio_hisense/websocket.py
+  s_ff715d7046dd99::t_4346c376d48590 115-139,141-169,171-185,191-210,213,215-222
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "065401236f9323cfd1e50be339899504d5a70856",
+  "prompts": {},
+  "sessions": {
+    "s_ff715d7046dd99": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cdaeb340-7654-48e4-8fc9-6194612a3390",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "Claudio Spiess <claudiosv@users.noreply.github.com>"
+    }
+  }
+}
