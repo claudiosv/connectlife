@@ -1,0 +1,21 @@
+.claude/settings.json
+  s_ff715d7046dd99::t_2a58f5322b303c 1-15
+.claude/hooks/check-version-bump.sh
+  s_ff715d7046dd99::t_9942ceff882cae 1-41
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "9dcd3583d8800b3b53a50082effa93165582399d",
+  "prompts": {},
+  "sessions": {
+    "s_ff715d7046dd99": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cdaeb340-7654-48e4-8fc9-6194612a3390",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "Claudio Spiess <claudiosv@users.noreply.github.com>"
+    }
+  }
+}
