@@ -30,7 +30,7 @@ A native Python Home Assistant custom integration for ConnectLife AC devices.
 
 ### Manual
 
-1. Copy the `custom_components/connectlife_claudio_wrapper` directory into your
+1. Copy the `custom_components/claudio_hisense` directory into your
    `<config>/custom_components/` folder.
 2. Restart Home Assistant.
 3. Go to **Settings → Devices & Services → Add Integration** and search for **ConnectLife**.
