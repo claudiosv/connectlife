@@ -1,0 +1,40 @@
+tests/test_config_flow.py
+  s_ff715d7046dd99::t_80722aae778b77 1-115
+custom_components/claudio_hisense/manifest.json
+  s_ff715d7046dd99::t_5ca6163afe6431 4
+pyproject.toml
+  s_ff715d7046dd99::t_da2a8e6907a590 11-12
+  s_ff715d7046dd99::t_d2cd4878394790 17-19
+tests/test_coordinator.py
+  s_ff715d7046dd99::t_dca8966af95e26 1-208
+tests/__init__.py
+  s_ff715d7046dd99::t_2dfb6052e7c2e7 1
+tests/conftest.py
+  s_ff715d7046dd99::t_15682863eb5d41 1-40
+tests/test_api.py
+  s_ff715d7046dd99::t_f98343d6e273f9 1-296
+tests/test_climate.py
+  s_ff715d7046dd99::t_0b962fb9ef9237 1-54
+CHANGELOG.md
+  s_ff715d7046dd99::t_c86ec2d3c643c3 6-18
+custom_components/claudio_hisense/api.py
+  s_ff715d7046dd99::t_e44b24fc13180f 366-367,369
+uv.lock
+  s_ff715d7046dd99::t_39f19728898e15 215-231,1313-1321,1664-1667,1674-1685,1691-1913,2167-2175,2366-2412,3016,3347-3393,3580-3585,3703-3743,3748-3750,3785-3852,4047-4070,4300-4358,4783-4835,4840-4842,4845,4856,4858-4861,4865-4987,5046-5061,5110-5135,5198-5875,5877-5879,5881,5883,5887-5888,5890-5895,5897-5899,5901,5903,5907-5908,5910-5912,5914,5916,5918,5922-5923,5926-5930,5932,5934,5938-5939,5943,5946-5947,5949,5951,5955-5956,5959,5964-5965,5967,5969,5973-5974,5977-5978,5981-5982,5984,5986,5990-5991,5993-6000,6002,6006-6007,6009-6011,6013,6015,6017,6021-6022,6024-6027,6029-6031,6033,6035,6039-6040,6042-6046,6048-6050,6052,6054,6086,6324-6384,6761-6821,6831-6839,6849-6881,7084-7092
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "1fb9e8afa28042d9fac7dc4633396eb1e82578ba",
+  "prompts": {},
+  "sessions": {
+    "s_ff715d7046dd99": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cdaeb340-7654-48e4-8fc9-6194612a3390",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "Claudio Spiess <claudiosv@users.noreply.github.com>"
+    }
+  }
+}
