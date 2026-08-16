@@ -19,6 +19,7 @@ from .const import (
     COMMAND_REFRESH_DELAY_SECONDS,
     CONF_BEEPING,
     CONF_COMMAND_REFRESH_DELAY,
+    CONF_COMMAND_REFRESH_ENABLED,
     DOMAIN,
 )
 from .coordinator import ConnectLifeCoordinator
@@ -51,8 +52,10 @@ async def async_setup_entry(
     coordinator: ConnectLifeCoordinator = hass.data[DOMAIN][entry.entry_id]
     cfg = entry_config(entry)
     beeping = cfg.get(CONF_BEEPING, False)
-    command_refresh_delay = int(
-        cfg.get(CONF_COMMAND_REFRESH_DELAY, COMMAND_REFRESH_DELAY_SECONDS)
+    command_refresh_delay = (
+        int(cfg.get(CONF_COMMAND_REFRESH_DELAY, COMMAND_REFRESH_DELAY_SECONDS))
+        if cfg.get(CONF_COMMAND_REFRESH_ENABLED, True)
+        else None
     )
     async_add_entities(
         ConnectLifeToggleSwitch(
@@ -75,7 +78,7 @@ class ConnectLifeToggleSwitch(CoordinatorEntity[ConnectLifeCoordinator], SwitchE
         device: dict[str, Any],
         td: _ToggleDef,
         beeping: bool = False,
-        command_refresh_delay: int = COMMAND_REFRESH_DELAY_SECONDS,
+        command_refresh_delay: int | None = COMMAND_REFRESH_DELAY_SECONDS,
     ) -> None:
         super().__init__(coordinator)
         self._puid = puid
@@ -162,16 +165,21 @@ class ConnectLifeToggleSwitch(CoordinatorEntity[ConnectLifeCoordinator], SwitchE
 
         ConnectLife's cloud needs time to actually apply a command — polling
         immediately just re-reads the pre-change state, same as climate.py's
-        _schedule_refresh.
+        _schedule_refresh. No-op if command_refresh_delay is None
+        (CONF_COMMAND_REFRESH_ENABLED disabled) — the WebSocket push already
+        keeps state current.
         """
+        delay = self._command_refresh_delay
+        if delay is None:
+            return
 
         async def _refresh() -> None:
-            await asyncio.sleep(self._command_refresh_delay)
+            await asyncio.sleep(delay)
             _LOGGER.debug(
                 "[%s] %s: requesting coordinator refresh after %.1fs command delay",
                 self._puid,
                 self._key,
-                self._command_refresh_delay,
+                delay,
             )
             await self.coordinator.async_request_refresh()
 

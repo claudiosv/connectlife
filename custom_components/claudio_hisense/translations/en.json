@@ -17,8 +17,10 @@
           "sensor_control_min_interval": "Minimum time between external sensor updates triggering the thermostat/dry-mode control loop (seconds, 0 to disable throttling)",
           "temperature_precision": "Temperature display precision (decimal places, 0 or 1)",
           "humidity_precision": "Humidity display precision (decimal places)",
-          "poll_interval": "Cloud poll interval (seconds)",
-          "command_refresh_delay": "Delay after sending a command before re-polling the cloud (seconds)",
+          "poll_interval_enabled": "Enable periodic cloud polling",
+          "poll_interval": "Cloud poll interval (seconds, ignored if polling is disabled)",
+          "command_refresh_enabled": "Re-poll the cloud shortly after sending a command",
+          "command_refresh_delay": "Delay after sending a command before re-polling the cloud (seconds, ignored if disabled)",
           "debounce_delay": "Delay before sending batched rapid commands (seconds)",
           "devices_config": "Device configuration (JSON)",
           "debug_logging": "Logging level (default, info, or debug)"

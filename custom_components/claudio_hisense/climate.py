@@ -38,6 +38,7 @@ from .const import (
     COMMAND_REFRESH_DELAY_SECONDS,
     CONF_BEEPING,
     CONF_COMMAND_REFRESH_DELAY,
+    CONF_COMMAND_REFRESH_ENABLED,
     CONF_CURRENT_HUMIDITY_ENTITY,
     CONF_CURRENT_TEMP_ENTITY,
     CONF_DEBOUNCE_DELAY,
@@ -152,8 +153,10 @@ async def async_setup_entry(
     )
     temperature_precision = cfg.get(CONF_TEMPERATURE_PRECISION)
     humidity_precision = cfg.get(CONF_HUMIDITY_PRECISION)
-    command_refresh_delay = int(
-        cfg.get(CONF_COMMAND_REFRESH_DELAY, COMMAND_REFRESH_DELAY_SECONDS)
+    command_refresh_delay = (
+        int(cfg.get(CONF_COMMAND_REFRESH_DELAY, COMMAND_REFRESH_DELAY_SECONDS))
+        if cfg.get(CONF_COMMAND_REFRESH_ENABLED, True)
+        else None
     )
     debounce_delay = float(cfg.get(CONF_DEBOUNCE_DELAY, DEBOUNCE_DELAY_SECONDS))
     # Entity-linking overrides (external temp/humidity sensor, Matter
@@ -336,7 +339,7 @@ class ConnectLifeClimate(
         external_temp_enabled: bool = True,
         current_humidity_entity: str | None = None,
         target_humidity: float | None = None,
-        command_refresh_delay: int = COMMAND_REFRESH_DELAY_SECONDS,
+        command_refresh_delay: int | None = COMMAND_REFRESH_DELAY_SECONDS,
         debounce_delay: float = DEBOUNCE_DELAY_SECONDS,
         matter_climate_entity: str | None = None,
         temperature_precision: int | None = None,
@@ -845,14 +848,21 @@ class ConnectLifeClimate(
     # ------------------------------------------------------------------
 
     def _schedule_refresh(self) -> None:
-        """Schedule a coordinator refresh after a short delay, resetting the poll timer."""
+        """Schedule a coordinator refresh after a short delay, resetting the poll timer.
+
+        No-op if command_refresh_delay is None (CONF_COMMAND_REFRESH_ENABLED
+        disabled) — the WebSocket push already keeps state current.
+        """
+        delay = self._command_refresh_delay
+        if delay is None:
+            return
 
         async def _refresh() -> None:
-            await asyncio.sleep(self._command_refresh_delay)
+            await asyncio.sleep(delay)
             _LOGGER.debug(
                 "[%s] Requesting coordinator refresh after %.1fs command delay",
                 self._puid,
-                self._command_refresh_delay,
+                delay,
             )
             await self.coordinator.async_request_refresh()
 

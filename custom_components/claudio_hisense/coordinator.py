@@ -31,13 +31,21 @@ class ConnectLifeCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         self,
         hass: HomeAssistant,
         api: ConnectLifeApi,
-        update_interval_seconds: int = UPDATE_INTERVAL_SECONDS,
+        update_interval_seconds: int | None = UPDATE_INTERVAL_SECONDS,
     ) -> None:
         super().__init__(
             hass,
             _LOGGER,
             name=DOMAIN,
-            update_interval=timedelta(seconds=update_interval_seconds),
+            # None disables periodic polling entirely (WebSocket-only,
+            # relying on ConnectLifeWebSocket's push updates) — see
+            # CONF_POLL_INTERVAL_ENABLED. Manual refreshes (first refresh,
+            # post-command _schedule_refresh) work either way.
+            update_interval=(
+                timedelta(seconds=update_interval_seconds)
+                if update_interval_seconds is not None
+                else None
+            ),
         )
         self.api = api
         # Set by __init__.async_setup_entry once the WebSocket connects; used

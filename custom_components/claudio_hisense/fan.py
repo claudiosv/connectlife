@@ -23,6 +23,7 @@ from .const import (
     COMMAND_REFRESH_DELAY_SECONDS,
     CONF_BEEPING,
     CONF_COMMAND_REFRESH_DELAY,
+    CONF_COMMAND_REFRESH_ENABLED,
     CONF_DEVICES_CONFIG,
     DOMAIN,
 )
@@ -52,8 +53,10 @@ async def async_setup_entry(
         _LOGGER.warning("Invalid devices_config JSON, using defaults")
         devices_config = {}
     beeping = cfg.get(CONF_BEEPING, False)
-    command_refresh_delay = int(
-        cfg.get(CONF_COMMAND_REFRESH_DELAY, COMMAND_REFRESH_DELAY_SECONDS)
+    command_refresh_delay = (
+        int(cfg.get(CONF_COMMAND_REFRESH_DELAY, COMMAND_REFRESH_DELAY_SECONDS))
+        if cfg.get(CONF_COMMAND_REFRESH_ENABLED, True)
+        else None
     )
 
     entities = []
@@ -88,7 +91,7 @@ class ConnectLifeFan(CoordinatorEntity[ConnectLifeCoordinator], FanEntity):
         device: dict[str, Any],
         fan_options: dict[str, str],
         beeping: bool = False,
-        command_refresh_delay: int = COMMAND_REFRESH_DELAY_SECONDS,
+        command_refresh_delay: int | None = COMMAND_REFRESH_DELAY_SECONDS,
     ) -> None:
         super().__init__(coordinator)
         self._puid = puid
@@ -256,15 +259,20 @@ class ConnectLifeFan(CoordinatorEntity[ConnectLifeCoordinator], FanEntity):
 
         ConnectLife's cloud needs time to actually apply a command — polling
         immediately just re-reads the pre-change state, same as climate.py's
-        _schedule_refresh.
+        _schedule_refresh. No-op if command_refresh_delay is None
+        (CONF_COMMAND_REFRESH_ENABLED disabled) — the WebSocket push already
+        keeps state current.
         """
+        delay = self._command_refresh_delay
+        if delay is None:
+            return
 
         async def _refresh() -> None:
-            await asyncio.sleep(self._command_refresh_delay)
+            await asyncio.sleep(delay)
             _LOGGER.debug(
                 "[%s] Requesting coordinator refresh after %.1fs command delay",
                 self._puid,
-                self._command_refresh_delay,
+                delay,
             )
             await self.coordinator.async_request_refresh()
 

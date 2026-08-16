@@ -22,6 +22,7 @@ from .const import (
     COMMAND_REFRESH_DELAY_SECONDS,
     CONF_BEEPING,
     CONF_COMMAND_REFRESH_DELAY,
+    CONF_COMMAND_REFRESH_ENABLED,
     CONF_CURRENT_HUMIDITY_ENTITY,
     CONF_CURRENT_TEMP_ENTITY,
     CONF_DEBOUNCE_DELAY,
@@ -37,6 +38,7 @@ from .const import (
     CONF_MATTER_TEMPERATURE_SENSOR_ENTITY,
     CONF_OAUTH_REDIRECT_URI,
     CONF_POLL_INTERVAL,
+    CONF_POLL_INTERVAL_ENABLED,
     CONF_SENSOR_CONTROL_MIN_INTERVAL,
     CONF_TARGET_HUMIDITY,
     CONF_TEMPERATURE_PRECISION,
@@ -161,6 +163,10 @@ def _general_schema(current: dict[str, Any]) -> vol.Schema:
             NumberSelectorConfig(min=0, max=2, step=1, mode=NumberSelectorMode.BOX)
         ),
         vol.Optional(
+            CONF_POLL_INTERVAL_ENABLED,
+            default=current.get(CONF_POLL_INTERVAL_ENABLED, True),
+        ): bool,
+        vol.Optional(
             CONF_POLL_INTERVAL,
             default=current.get(CONF_POLL_INTERVAL, UPDATE_INTERVAL_SECONDS),
         ): NumberSelector(
@@ -172,6 +178,10 @@ def _general_schema(current: dict[str, Any]) -> vol.Schema:
                 unit_of_measurement="s",
             )
         ),
+        vol.Optional(
+            CONF_COMMAND_REFRESH_ENABLED,
+            default=current.get(CONF_COMMAND_REFRESH_ENABLED, True),
+        ): bool,
         vol.Optional(
             CONF_COMMAND_REFRESH_DELAY,
             default=current.get(
@@ -442,8 +452,14 @@ class ConnectLifeOptionsFlow(OptionsFlow):
                         CONF_HUMIDITY_PRECISION: user_input.get(
                             CONF_HUMIDITY_PRECISION
                         ),
+                        CONF_POLL_INTERVAL_ENABLED: user_input.get(
+                            CONF_POLL_INTERVAL_ENABLED, True
+                        ),
                         CONF_POLL_INTERVAL: user_input.get(
                             CONF_POLL_INTERVAL, UPDATE_INTERVAL_SECONDS
+                        ),
+                        CONF_COMMAND_REFRESH_ENABLED: user_input.get(
+                            CONF_COMMAND_REFRESH_ENABLED, True
                         ),
                         CONF_COMMAND_REFRESH_DELAY: user_input.get(
                             CONF_COMMAND_REFRESH_DELAY, COMMAND_REFRESH_DELAY_SECONDS

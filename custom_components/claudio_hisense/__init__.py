@@ -14,6 +14,7 @@ from .const import (
     CONF_DEBUG_LOGGING,
     CONF_OAUTH_REDIRECT_URI,
     CONF_POLL_INTERVAL,
+    CONF_POLL_INTERVAL_ENABLED,
     DEFAULT_OAUTH_REDIRECT_URI,
     DOMAIN,
     LOG_LEVEL_DEBUG,
@@ -131,7 +132,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     api = ConnectLifeApi(oauth_session=oauth_session, hass=hass)
 
-    poll_interval = int(cfg.get(CONF_POLL_INTERVAL, UPDATE_INTERVAL_SECONDS))
+    poll_interval = (
+        int(cfg.get(CONF_POLL_INTERVAL, UPDATE_INTERVAL_SECONDS))
+        if cfg.get(CONF_POLL_INTERVAL_ENABLED, True)
+        else None
+    )
     coordinator = ConnectLifeCoordinator(hass, api, poll_interval)
     await coordinator.async_config_entry_first_refresh()
 
