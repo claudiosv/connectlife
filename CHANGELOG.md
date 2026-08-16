@@ -3,6 +3,13 @@
 All notable changes to this integration are documented here. Versions match
 `custom_components/claudio_hisense/manifest.json`.
 
+## 2.0.2
+
+- Repo tooling only: every future push now requires a version bump + this
+  changelog to be updated (enforced by a Claude Code hook), and releases are
+  tagged on GitHub so HACS shows the real version and release notes instead
+  of a bare commit SHA.
+
 ## 2.0.1
 
 - Fix `get_devices()`/`update_device()` reading a nonexistent `"response"`
