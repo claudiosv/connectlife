@@ -1,0 +1,53 @@
+custom_components/claudio_hisense/manifest.json
+  s_ff715d7046dd99::t_cdb5cc7330e923 4
+CHANGELOG.md
+  s_ff715d7046dd99::t_58ff711bbe76a2 6-13
+custom_components/claudio_hisense/const.py
+  s_ff715d7046dd99::t_4f9899d52a356d 23,25
+custom_components/claudio_hisense/coordinator.py
+  s_ff715d7046dd99::t_b0bd2d2fbe3d96 34,40-48
+custom_components/claudio_hisense/config_flow.py
+  s_ff715d7046dd99::t_d0c46ce35adee6 41
+  s_ff715d7046dd99::t_666a30fec6f43f 455-457,461-463
+  s_ff715d7046dd99::t_d7dada85f887ee 165-168,181-184
+  s_ff715d7046dd99::t_8fa2a47ae6334f 25
+custom_components/claudio_hisense/fan.py
+  s_ff715d7046dd99::t_3fa22f93e824cd 26
+  s_ff715d7046dd99::t_e132ecc1d4ff4c 56-59
+  s_ff715d7046dd99::t_70ad888079018c 94
+  s_ff715d7046dd99::t_be4c97f693130b 262-264,266-268,271,275
+custom_components/claudio_hisense/switch.py
+  s_ff715d7046dd99::t_4ad15758c15fc4 22
+  s_ff715d7046dd99::t_0cdf6dbac49770 168-170,172-174,177,182
+  s_ff715d7046dd99::t_ff1937dfdec774 81
+  s_ff715d7046dd99::t_c1a7ae3b63033a 55-58
+custom_components/claudio_hisense/climate.py
+  s_ff715d7046dd99::t_023f2fa39c3db4 851-855,858
+  s_ff715d7046dd99::t_b52e61296800d4 41
+  s_ff715d7046dd99::t_11962585e333a6 856-857,861,865
+  s_ff715d7046dd99::t_39759b393169e8 156-159
+  s_ff715d7046dd99::t_a707b4fe5c32b7 342
+custom_components/claudio_hisense/strings.json
+  s_ff715d7046dd99::t_f7b614f34e5962 20-23
+custom_components/claudio_hisense/__init__.py
+  s_ff715d7046dd99::t_aabfc9d222ffb7 135-139
+  s_ff715d7046dd99::t_b2010c83ddc175 17
+custom_components/claudio_hisense/translations/en.json
+  s_ff715d7046dd99::t_416571cce42486 20-23
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "cdffdc83e0d1230c0424322a9e1b673b6ee2d98b",
+  "prompts": {},
+  "sessions": {
+    "s_ff715d7046dd99": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cdaeb340-7654-48e4-8fc9-6194612a3390",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "Claudio Spiess <claudiosv@users.noreply.github.com>"
+    }
+  }
+}
