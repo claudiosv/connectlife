@@ -12,7 +12,9 @@ from homeassistant.helpers import config_entry_oauth2_flow, entity_platform
 from .api import ConnectLifeApi
 from .const import (
     CONF_DEBUG_LOGGING,
+    CONF_OAUTH_REDIRECT_URI,
     CONF_POLL_INTERVAL,
+    DEFAULT_OAUTH_REDIRECT_URI,
     DOMAIN,
     LOG_LEVEL_DEBUG,
     LOG_LEVEL_DEFAULT,
@@ -110,29 +112,19 @@ async def _async_patch_matter_dry_fan_support(
     _LOGGER.debug("Recalculated features for %d Matter climate entities", patched)
 
 
-async def async_setup(hass: HomeAssistant, config: dict) -> bool:
-    """Register the ConnectLife OAuth2 implementation.
-
-    Must run unconditionally on every startup (not just when the config flow
-    itself runs) — config_entry_oauth2_flow's implementation registry is
-    in-memory, so a restarted HA needs this to re-populate it before
-    async_setup_entry can resolve an existing entry's implementation.
-    """
-    config_entry_oauth2_flow.async_register_implementation(
-        hass, DOMAIN, ConnectLifeOAuth2Implementation(hass)
-    )
-    return True
-
-
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up ConnectLife from a config entry."""
     cfg = entry_config(entry)
     _apply_debug_logging(cfg)
     _LOGGER.debug("Setting up ConnectLife entry %s (title=%r)", entry.entry_id, entry.title)
 
-    implementation = await config_entry_oauth2_flow.async_get_config_entry_implementation(
-        hass, entry
-    )
+    # Built directly rather than via config_entry_oauth2_flow's implementation
+    # registry: ConnectLife's OAuth server only accepts a fixed,
+    # pre-registered redirect URI (configurable at setup time — see
+    # config_flow.py), which the registry's one-implementation-per-domain
+    # model can't represent per config entry.
+    redirect_uri = entry.data.get(CONF_OAUTH_REDIRECT_URI, DEFAULT_OAUTH_REDIRECT_URI)
+    implementation = ConnectLifeOAuth2Implementation(hass, redirect_uri=redirect_uri)
     ha_oauth_session = config_entry_oauth2_flow.OAuth2Session(hass, entry, implementation)
     await ha_oauth_session.async_ensure_token_valid()
     oauth_session = OAuth2Session(hass, implementation, token=dict(entry.data.get("token", {})))

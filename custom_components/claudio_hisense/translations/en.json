@@ -1,55 +1,59 @@
 {
-    "options": {
-        "step": {
-            "init": {
-                "title": "ConnectLife options",
-                "data": {
-                    "beeping": "Enable beep on commands",
-                    "temperature_unit": "Temperature unit",
-                    "temperature_sensors": "Create separate temperature sensor entities",
-                    "current_temperature_entity": "External temperature sensor (overrides AC reading)",
-                    "external_temp_enabled": "Use the external temperature sensor",
-                    "thermostat_forcing_enabled": "Force min/max temperature to hold the external sensor's target when not routed through Matter (bang-bang control)",
-                    "current_humidity_entity": "External humidity sensor",
-                    "target_humidity": "Target humidity for dry-mode control (%)",
-                    "dry_idle_mode": "Dry mode action once target humidity is reached (fan_only or off)",
-                    "humidity_hysteresis": "Humidity buffer before switching dry/idle modes (percentage points)",
-                    "matter_climate_entity": "Hisense Matter AC (used for current/target temperature and mode when available)",
-                    "matter_temperature_sensor_entity": "Matter temperature sensor (optional, higher precision than the Matter climate entity)",
-                    "matter_sync_timeout": "How long to trust our own state after a Matter command before falling back to ConnectLife's reported value",
-                    "sensor_control_min_interval": "Minimum time between external sensor updates triggering the thermostat/dry-mode control loop (seconds, 0 to disable throttling)",
-                    "temperature_precision": "Temperature display precision (decimal places, 0 or 1)",
-                    "humidity_precision": "Humidity display precision (decimal places)",
-                    "poll_interval": "Cloud poll interval (seconds)",
-                    "command_refresh_delay": "Delay after sending a command before re-polling the cloud (seconds)",
-                    "debounce_delay": "Delay before sending batched rapid commands (seconds)",
-                    "devices_config": "Device configuration (JSON)",
-                    "debug_logging": "Logging level (default, info, or debug)"
-                }
-            }
-        },
-        "error": {
-            "invalid_json": "The device configuration is not valid JSON.",
-            "unknown": "An unexpected error occurred."
+  "options": {
+    "step": {
+      "init": {
+        "title": "ConnectLife options",
+        "data": {
+          "beeping": "Enable beep on commands",
+          "temperature_unit": "Temperature unit",
+          "temperature_sensors": "Create separate temperature sensor entities",
+          "current_temperature_entity": "External temperature sensor (overrides AC reading)",
+          "external_temp_enabled": "Use the external temperature sensor",
+          "thermostat_forcing_enabled": "Force min/max temperature to hold the external sensor's target when not routed through Matter (bang-bang control)",
+          "current_humidity_entity": "External humidity sensor (overrides AC reading)",
+          "target_humidity": "Target humidity for dry-mode control (%)",
+          "dry_idle_mode": "Dry mode action once target humidity is reached (fan_only or off)",
+          "humidity_hysteresis": "Humidity buffer before switching dry/idle modes (percentage points)",
+          "matter_climate_entity": "Hisense Matter AC (used for current/target temperature and mode when available)",
+          "matter_temperature_sensor_entity": "Matter temperature sensor (optional, higher precision than the Matter climate entity)",
+          "matter_sync_timeout": "How long to trust our own state after a Matter command before falling back to ConnectLife's reported value",
+          "sensor_control_min_interval": "Minimum time between external sensor updates triggering the thermostat/dry-mode control loop (seconds, 0 to disable throttling)",
+          "temperature_precision": "Temperature display precision (decimal places, 0 or 1)",
+          "humidity_precision": "Humidity display precision (decimal places)",
+          "poll_interval": "Cloud poll interval (seconds)",
+          "command_refresh_delay": "Delay after sending a command before re-polling the cloud (seconds)",
+          "debounce_delay": "Delay before sending batched rapid commands (seconds)",
+          "devices_config": "Device configuration (JSON)",
+          "debug_logging": "Logging level (default, info, or debug)"
         }
+      }
     },
-    "config": {
-        "step": {
-            "pick_implementation": {
-                "title": "Pick authentication method"
-            }
-        },
-        "abort": {
-            "already_configured": "This account is already configured.",
-            "single_instance_allowed": "Already configured. Only a single instance is allowed.",
-            "missing_configuration": "The component is not configured. Please follow the documentation.",
-            "authorize_url_timeout": "Timeout generating authorize URL.",
-            "no_url_available": "No URL available. For information about this error, check the help section.",
-            "oauth_timeout": "Timeout resolving OAuth token.",
-            "oauth_unauthorized": "ConnectLife rejected the login (unauthorized).",
-            "oauth_failed": "Error while obtaining access token.",
-            "oauth_error": "Received invalid token data.",
-            "user_rejected_authorize": "Login was cancelled: {error}"
-        }
+    "error": {
+      "invalid_json": "The device configuration is not valid JSON.",
+      "unknown": "An unexpected error occurred."
     }
+  },
+  "config": {
+    "step": {
+      "user": {
+        "title": "ConnectLife",
+        "description": "ConnectLife's login server only redirects back to a fixed, pre-registered address — it will not use Home Assistant's own external URL. If your instance isn't reachable at the default below, change it to match (you'll need port 8123 open and `/auth/external/callback` reachable at that address).",
+        "data": {
+          "oauth_redirect_uri": "OAuth redirect URI"
+        }
+      }
+    },
+    "abort": {
+      "already_configured": "This account is already configured.",
+      "single_instance_allowed": "Already configured. Only a single instance is allowed.",
+      "missing_configuration": "The component is not configured. Please follow the documentation.",
+      "authorize_url_timeout": "Timeout generating authorize URL.",
+      "no_url_available": "No URL available. For information about this error, check the help section.",
+      "oauth_timeout": "Timeout resolving OAuth token.",
+      "oauth_unauthorized": "ConnectLife rejected the login (unauthorized).",
+      "oauth_failed": "Error while obtaining access token.",
+      "oauth_error": "Received invalid token data.",
+      "user_rejected_authorize": "Login was cancelled: {error}"
+    }
+  }
 }

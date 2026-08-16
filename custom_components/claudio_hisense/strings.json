@@ -35,8 +35,12 @@
   },
   "config": {
     "step": {
-      "pick_implementation": {
-        "title": "Pick authentication method"
+      "user": {
+        "title": "ConnectLife",
+        "description": "ConnectLife's login server only redirects back to a fixed, pre-registered address — it will not use Home Assistant's own external URL. If your instance isn't reachable at the default below, change it to match (you'll need port 8123 open and `/auth/external/callback` reachable at that address).",
+        "data": {
+          "oauth_redirect_uri": "OAuth redirect URI"
+        }
       }
     },
     "abort": {

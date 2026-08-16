@@ -34,6 +34,7 @@ from .const import (
     CONF_MATTER_CLIMATE_ENTITY,
     CONF_MATTER_SYNC_TIMEOUT,
     CONF_MATTER_TEMPERATURE_SENSOR_ENTITY,
+    CONF_OAUTH_REDIRECT_URI,
     CONF_POLL_INTERVAL,
     CONF_SENSOR_CONTROL_MIN_INTERVAL,
     CONF_TARGET_HUMIDITY,
@@ -43,6 +44,7 @@ from .const import (
     CONF_THERMOSTAT_FORCING_ENABLED,
     DEBOUNCE_DELAY_SECONDS,
     DEFAULT_HUMIDITY_HYSTERESIS,
+    DEFAULT_OAUTH_REDIRECT_URI,
     DOMAIN,
     DRY_IDLE_MODE_FAN_ONLY,
     DRY_IDLE_MODE_OFF,
@@ -55,6 +57,7 @@ from .const import (
     TEMP_UNIT_FAHRENHEIT,
     UPDATE_INTERVAL_SECONDS,
 )
+from .oauth2 import ConnectLifeOAuth2Implementation
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -282,6 +285,8 @@ class ConnectLifeConfigFlow(
     DOMAIN = DOMAIN
     VERSION = 1
 
+    _redirect_uri: str
+
     @property
     def logger(self) -> logging.Logger:
         return _LOGGER
@@ -299,11 +304,33 @@ class ConnectLifeConfigFlow(
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Handle a flow start: single instance, then hand off to OAuth2."""
+        """Ask for the OAuth redirect URI, then hand off to OAuth2.
+
+        ConnectLife's OAuth server only accepts a fixed, pre-registered
+        redirect URI — it will not redirect to Home Assistant's own
+        dynamically-computed external URL like most OAuth2 integrations do.
+        So instead of picking a registered implementation, this builds one
+        directly with the redirect URI the user confirms/edits here.
+        """
         await self.async_set_unique_id(DOMAIN)
         if self._async_current_entries():
             return self.async_abort(reason="single_instance_allowed")
-        return await super().async_step_user(user_input)
+
+        if user_input is None:
+            return self.async_show_form(
+                step_id="user",
+                data_schema=vol.Schema({
+                    vol.Required(
+                        CONF_OAUTH_REDIRECT_URI, default=DEFAULT_OAUTH_REDIRECT_URI
+                    ): str,
+                }),
+            )
+
+        self._redirect_uri = user_input[CONF_OAUTH_REDIRECT_URI]
+        self.flow_impl = ConnectLifeOAuth2Implementation(
+            self.hass, redirect_uri=self._redirect_uri
+        )
+        return await self.async_step_auth()
 
     async def async_oauth_create_entry(self, data: dict) -> ConfigFlowResult:
         """Create the config entry once the OAuth2 token exchange completes."""
@@ -311,6 +338,7 @@ class ConnectLifeConfigFlow(
             title="ConnectLife",
             data={
                 **data,
+                CONF_OAUTH_REDIRECT_URI: self._redirect_uri,
                 CONF_BEEPING: False,
                 CONF_TEMPERATURE_UNIT: TEMP_UNIT_CELSIUS,
                 CONF_TEMPERATURE_SENSORS: False,

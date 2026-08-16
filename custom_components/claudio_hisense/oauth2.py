@@ -1,10 +1,13 @@
 """OAuth2 implementation for the ConnectLife integration.
 
-Ported from Connectlife-LLC/HomeAssistantPlugin's oauth2.py. Unlike that
-plugin, this does NOT override `redirect_uri` with a hardcoded
-homeassistant.local:8123 URL — it inherits LocalOAuth2Implementation's
-default, which derives the callback from this Home Assistant instance's own
-configured internal/external URL, so it works for any deployment.
+Ported from Connectlife-LLC/HomeAssistantPlugin's oauth2.py. ConnectLife's
+OAuth server only accepts a fixed, pre-registered redirect URI, so — unlike
+most OAuth2 integrations — this does NOT use LocalOAuth2Implementation's
+default `redirect_uri` (which derives the callback from Home Assistant's own
+dynamically-computed external URL). Instead the redirect URI is passed in
+explicitly, configured through the config flow with
+DEFAULT_OAUTH_REDIRECT_URI ("http://homeassistant.local:8123/auth/external/callback")
+as the default, matching the plugin's original hardcoded value.
 """
 
 from __future__ import annotations
@@ -17,7 +20,14 @@ import aiohttp
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import config_entry_oauth2_flow
 
-from .const import CLIENT_ID, CLIENT_SECRET, DOMAIN, OAUTH2_AUTHORIZE, OAUTH2_TOKEN
+from .const import (
+    CLIENT_ID,
+    CLIENT_SECRET,
+    DEFAULT_OAUTH_REDIRECT_URI,
+    DOMAIN,
+    OAUTH2_AUTHORIZE,
+    OAUTH2_TOKEN,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -75,7 +85,9 @@ class OAuth2Session:
 class ConnectLifeOAuth2Implementation(config_entry_oauth2_flow.LocalOAuth2Implementation):
     """OAuth2 implementation for the ConnectLife/Hisense backend."""
 
-    def __init__(self, hass: HomeAssistant) -> None:
+    def __init__(
+        self, hass: HomeAssistant, redirect_uri: str = DEFAULT_OAUTH_REDIRECT_URI
+    ) -> None:
         super().__init__(
             hass=hass,
             domain=DOMAIN,
@@ -84,10 +96,20 @@ class ConnectLifeOAuth2Implementation(config_entry_oauth2_flow.LocalOAuth2Implem
             authorize_url=OAUTH2_AUTHORIZE,
             token_url=OAUTH2_TOKEN,
         )
+        self._redirect_uri = redirect_uri
 
     @property
     def name(self) -> str:
         return "ConnectLife"
+
+    @property
+    def redirect_uri(self) -> str:
+        """Overrides LocalOAuth2Implementation's dynamic-URL default.
+
+        ConnectLife only accepts this fixed, pre-registered redirect URI —
+        not whatever Home Assistant's own external URL happens to be.
+        """
+        return self._redirect_uri
 
     async def _token_request(self, data: dict) -> dict:
         response = await super()._token_request(data)
@@ -96,6 +118,12 @@ class ConnectLifeOAuth2Implementation(config_entry_oauth2_flow.LocalOAuth2Implem
         return response
 
     async def async_refresh_token(self, token: dict) -> dict:
+        """Overrides AbstractOAuth2Implementation's public wrapper directly.
+
+        ConnectLife's refresh grant requires client_secret, unlike
+        LocalOAuth2Implementation's default `_async_refresh_token`, which
+        omits it — so this is overridden here rather than at that layer.
+        """
         refresh_token = token.get("refresh_token")
         if not refresh_token:
             raise ValueError("No refresh token available")

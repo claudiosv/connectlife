@@ -23,6 +23,7 @@ CONF_POLL_INTERVAL = "poll_interval"
 CONF_COMMAND_REFRESH_DELAY = "command_refresh_delay"
 CONF_DEBOUNCE_DELAY = "debounce_delay"
 CONF_DEBUG_LOGGING = "debug_logging"
+CONF_OAUTH_REDIRECT_URI = "oauth_redirect_uri"
 
 TEMP_UNIT_CELSIUS = "celsius"
 TEMP_UNIT_FAHRENHEIT = "fahrenheit"
@@ -72,6 +73,12 @@ OAUTH2_AUTHORIZE = "https://oauth.hijuconn.com/login"
 OAUTH2_TOKEN = "https://oauth.hijuconn.com/oauth/token"
 CLIENT_ID = "9793620883275788"
 CLIENT_SECRET = "7h1m3gZVlILyBvIFBNmzXwoFYLhkGqG9NQd2jBzuZCqJKCTyCtYwQtXi4tVBjg9B"
+# ConnectLife's OAuth server only accepts a fixed, pre-registered redirect
+# URI — it will not redirect to Home Assistant's own dynamically-computed
+# external URL, unlike most OAuth2 integrations. Configurable at setup time
+# (the config flow shows this as an editable field) in case a deployment
+# needs a different host/port than the plugin's original hardcoded default.
+DEFAULT_OAUTH_REDIRECT_URI = "http://homeassistant.local:8123/auth/external/callback"
 
 # WebSocket push updates
 WEBSOCKET_RECONNECT_INTERVAL = 30  # seconds
