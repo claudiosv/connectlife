@@ -34,6 +34,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util.unit_conversion import TemperatureConverter
 
 from . import entry_config
+from .api import ConnectLifeApi, ConnectLifeApiError, ConnectLifeAuthError
 from .const import (
     COMMAND_REFRESH_DELAY_SECONDS,
     CONF_BEEPING,
@@ -194,6 +195,31 @@ async def async_setup_entry(
             )
         )
     async_add_entities(entities)
+
+
+async def _async_update_device_safe(
+    api: ConnectLifeApi, puid: str, properties: dict[str, Any]
+) -> bool:
+    """Send a property update, logging (not raising) on failure.
+
+    Several call sites run from fire-and-forget background tasks
+    (_flush_pending's debounce task, _schedule_refresh) or from
+    HA-triggered service calls whose own exception handling only logs an
+    ugly traceback — ConnectLife rejecting a command for reasons outside
+    our control (device offline, rate limited, transient errors) shouldn't
+    surface as an unhandled exception either way. The next poll/push
+    naturally reconciles our optimistic state once the device is reachable
+    again. Returns True on success.
+    """
+    try:
+        await api.update_device(puid, properties)
+        return True
+    except (ConnectLifeApiError, ConnectLifeAuthError) as exc:
+        _LOGGER.warning("[%s] Failed to update device: %s", puid, exc)
+        return False
+    except Exception:
+        _LOGGER.exception("[%s] Unexpected error updating device", puid)
+        return False
 
 
 def _get_device_config(devices_config: dict, feature_code: str) -> dict:
@@ -898,7 +924,7 @@ class ConnectLifeClimate(
         _LOGGER.debug(
             "[%s] Sending debounced update to ConnectLife: %s", self._puid, props
         )
-        await self.coordinator.api.update_device(self._puid, props)
+        await _async_update_device_safe(self.coordinator.api, self._puid, props)
         self._schedule_refresh()
 
     async def async_will_remove_from_hass(self) -> None:
@@ -1481,8 +1507,10 @@ class ConnectLifeClimate(
                             current_humidity,
                             self._target_humidity,
                         )
-                        await self.coordinator.api.update_device(
-                            self._puid, self._build_properties({"t_power": 1})
+                        await _async_update_device_safe(
+                            self.coordinator.api,
+                            self._puid,
+                            self._build_properties({"t_power": 1}),
                         )
                         self._schedule_refresh()
                     elif current_humidity <= self._target_humidity and is_on:
@@ -1492,8 +1520,10 @@ class ConnectLifeClimate(
                             current_humidity,
                             self._target_humidity,
                         )
-                        await self.coordinator.api.update_device(
-                            self._puid, self._build_properties({"t_power": 0})
+                        await _async_update_device_safe(
+                            self.coordinator.api,
+                            self._puid,
+                            self._build_properties({"t_power": 0}),
                         )
                         self._schedule_refresh()
                 except ValueError:
@@ -1507,8 +1537,10 @@ class ConnectLifeClimate(
             device_temp = -1
         if device_temp == api_temp:
             return
-        await self.coordinator.api.update_device(
-            self._puid, self._build_properties({"t_temp": api_temp})
+        await _async_update_device_safe(
+            self.coordinator.api,
+            self._puid,
+            self._build_properties({"t_temp": api_temp}),
         )
 
     async def _async_thermostat_via_matter(self, target_temp: float) -> None:
@@ -1542,8 +1574,10 @@ class ConnectLifeClimate(
                 int(target_temp),
                 exc_info=True,
             )
-            await self.coordinator.api.update_device(
-                self._puid, self._build_properties({"t_temp": int(target_temp)})
+            await _async_update_device_safe(
+                self.coordinator.api,
+                self._puid,
+                self._build_properties({"t_temp": int(target_temp)}),
             )
 
     async def _async_dry_humidity_control(self) -> None:
@@ -1652,7 +1686,8 @@ class ConnectLifeClimate(
         # Explicit t_power=1 override — this call only ever runs while
         # entering the fan_only idle mode, so the device must be on
         # regardless of what _build_properties would otherwise infer.
-        await self.coordinator.api.update_device(
+        await _async_update_device_safe(
+            self.coordinator.api,
             self._puid,
             self._build_properties({"t_power": 1, "t_fan_speed": int(fan_val)}),
         )

@@ -14,7 +14,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from . import entry_config
-from .climate import _build_full_properties
+from .climate import _async_update_device_safe, _build_full_properties
 from .const import (
     COMMAND_REFRESH_DELAY_SECONDS,
     CONF_BEEPING,
@@ -157,7 +157,7 @@ class ConnectLifeToggleSwitch(CoordinatorEntity[ConnectLifeCoordinator], SwitchE
             )
             return
         _LOGGER.debug("[%s] Sending update to ConnectLife: %s", self._puid, props)
-        await self.coordinator.api.update_device(self._puid, props)
+        await _async_update_device_safe(self.coordinator.api, self._puid, props)
         self._schedule_refresh()
 
     def _schedule_refresh(self) -> None:

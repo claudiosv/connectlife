@@ -3,6 +3,18 @@
 All notable changes to this integration are documented here. Versions match
 `custom_components/claudio_hisense/manifest.json`.
 
+## 2.3.1
+
+- Fixed a crash (`ConnectLifeApiError: API error: Unknown error`, e.g. when
+  ConnectLife rejects a command because the device is offline) that
+  propagated out of `climate.py`'s thermostat/dry-mode control loop and
+  debounced-update paths as an unhandled exception. All `update_device()`
+  call sites in climate.py/fan.py/switch.py now go through a shared
+  `_async_update_device_safe()` helper that logs and swallows API/auth
+  errors instead of raising — including in fire-and-forget background
+  tasks (the debounce flush, post-command refresh), where an unhandled
+  exception would otherwise be even harder to notice.
+
 ## 2.3.0
 
 - Device fault flags (Upper/Lower Machine Fault, Indoor/Outdoor Coil/Temp
