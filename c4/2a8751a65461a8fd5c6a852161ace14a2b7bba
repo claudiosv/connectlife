@@ -1,0 +1,43 @@
+custom_components/claudio_hisense/sensor.py
+  s_ff715d7046dd99::t_782f667b84ba02 47-49,55-61
+  s_ff715d7046dd99::t_a2c815374ce8f3 118
+  s_ff715d7046dd99::t_df5e61e07b46a7 26
+custom_components/claudio_hisense/const.py
+  s_ff715d7046dd99::t_b22da9fa9511d9 27-30
+README.md
+  s_ff715d7046dd99::t_c646da6ae326e4 43-47
+custom_components/claudio_hisense/climate.py
+  s_ff715d7046dd99::t_2070b743e8d12f 44
+  s_ff715d7046dd99::t_fe5f1888e819e4 159-191
+custom_components/claudio_hisense/translations/en.json
+  s_ff715d7046dd99::t_b7a1dac3a81e4d 6-12,17-29,39
+custom_components/claudio_hisense/strings.json
+  s_ff715d7046dd99::t_17aea144498f06 6-12,17-29,39
+custom_components/claudio_hisense/manifest.json
+  s_ff715d7046dd99::t_5ab51430390afd 4
+custom_components/claudio_hisense/config_flow.py
+  s_ff715d7046dd99::t_b5db234facc0c7 120-121,123-126,137-214
+  s_ff715d7046dd99::t_ff10d0f879d795 504-507
+  s_ff715d7046dd99::t_867cc127a17a12 362-364,366-373,377-387,392-399,401-412,422-424,432-459,462-463,466-503,508-516
+  s_ff715d7046dd99::t_3302aee6947309 29
+  s_ff715d7046dd99::t_14d04611c967f1 122
+  s_ff715d7046dd99::t_49b3d46b9e8406 425-431
+CHANGELOG.md
+  s_ff715d7046dd99::t_ae2c8c36730370 6-15
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "c42a8751a65461a8fd5c6a852161ace14a2b7bba",
+  "prompts": {},
+  "sessions": {
+    "s_ff715d7046dd99": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cdaeb340-7654-48e4-8fc9-6194612a3390",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "Claudio Spiess <claudiosv@users.noreply.github.com>"
+    }
+  }
+}
