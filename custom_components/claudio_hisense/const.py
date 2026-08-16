@@ -93,6 +93,20 @@ DEFAULT_OAUTH_REDIRECT_URI = "http://homeassistant.local:8123/auth/external/call
 # WebSocket push updates
 WEBSOCKET_RECONNECT_INTERVAL = 30  # seconds
 
+# Boolean fault/error flags ConnectLife reports per device. "1" means the
+# fault is currently active, "0"/absent means clear. Any active fault raises
+# a Home Assistant repair issue + persistent notification — see
+# coordinator.py's _check_faults.
+FAULT_FIELDS: dict[str, str] = {
+    "f_e_upmachine": "Upper Machine Fault",
+    "f_e_dwmachine": "Lower Machine Fault",
+    "f_e_intemp": "Indoor Temp Sensor Fault",
+    "f_e_incoiltemp": "Indoor Coil Temp Sensor Fault",
+    "f_e_outcoiltemp": "Outdoor Coil Temp Sensor Fault",
+    "f_e_waterfull": "Water Tank Full",
+    "f_e_push": "Push Fault",
+}
+
 # Temperature unit codes (from ConnectLife API PHP enum: celsius='0', fahrenheit='1')
 TEMP_CODE_CELSIUS = 0
 TEMP_CODE_FAHRENHEIT = 1

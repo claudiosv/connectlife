@@ -69,5 +69,11 @@
       "oauth_error": "Received invalid token data.",
       "user_rejected_authorize": "Login was cancelled: {error}"
     }
+  },
+  "issues": {
+    "device_fault": {
+      "title": "{fault_name}",
+      "description": "ConnectLife reported a fault on **{device_name}**: {fault_name}. This issue clears automatically once ConnectLife reports the fault is no longer active."
+    }
   }
 }

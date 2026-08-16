@@ -8,7 +8,9 @@ import logging
 from datetime import timedelta
 from typing import Any
 
+from homeassistant.components import persistent_notification
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .api import (
@@ -17,7 +19,7 @@ from .api import (
     ConnectLifeAuthError,
     ConnectLifeRateLimitError,
 )
-from .const import DOMAIN, UPDATE_INTERVAL_SECONDS
+from .const import DOMAIN, FAULT_FIELDS, UPDATE_INTERVAL_SECONDS
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -51,6 +53,10 @@ class ConnectLifeCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         # Set by __init__.async_setup_entry once the WebSocket connects; used
         # only so async_unload_entry can find it to disconnect on unload.
         self.websocket: Any = None
+        # {puid: {fault_key, ...}} — fault fields currently active per
+        # device, so _check_faults only creates/clears a repair issue and
+        # notification on a state *transition*, not on every update.
+        self._active_faults: dict[str, set[str]] = {}
 
     async def _async_update_data(self) -> dict[str, dict[str, Any]]:
         """Fetch devices from the API and return a puid-keyed dict."""
@@ -91,7 +97,60 @@ class ConnectLifeCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             len(devices),
             [d.get("puid") for d in devices],
         )
-        return {device["puid"]: device for device in devices}
+        result = {device["puid"]: device for device in devices}
+        self._check_faults(result)
+        return result
+
+    def _check_faults(self, data: dict[str, dict[str, Any]]) -> None:
+        """Raise/clear a repair issue + notification for each fault field.
+
+        Compares each device's current fault flags against what was active
+        last time, so an issue/notification is only created or cleared on
+        an actual transition — not re-created on every poll/push while a
+        fault stays active.
+        """
+        for puid, device in data.items():
+            status = device.get("statusList", {})
+            device_name = device.get("deviceNickName", puid)
+            active_now = self._active_faults.setdefault(puid, set())
+
+            for key, fault_name in FAULT_FIELDS.items():
+                is_active = str(status.get(key, "0")) == "1"
+                issue_id = f"{puid}_{key}"
+
+                if is_active and key not in active_now:
+                    active_now.add(key)
+                    _LOGGER.warning(
+                        "[%s] ConnectLife fault active: %s", puid, fault_name
+                    )
+                    ir.async_create_issue(
+                        self.hass,
+                        DOMAIN,
+                        issue_id,
+                        is_fixable=False,
+                        severity=ir.IssueSeverity.WARNING,
+                        translation_key="device_fault",
+                        translation_placeholders={
+                            "device_name": str(device_name),
+                            "fault_name": fault_name,
+                        },
+                    )
+                    persistent_notification.async_create(
+                        self.hass,
+                        f"ConnectLife reported a fault on {device_name}: "
+                        f"{fault_name}.",
+                        title=f"{device_name}: {fault_name}",
+                        notification_id=f"{DOMAIN}_{issue_id}",
+                    )
+                elif not is_active and key in active_now:
+                    active_now.discard(key)
+                    _LOGGER.info(
+                        "[%s] ConnectLife fault cleared: %s", puid, fault_name
+                    )
+                    ir.async_delete_issue(self.hass, DOMAIN, issue_id)
+                    persistent_notification.async_dismiss(
+                        self.hass, f"{DOMAIN}_{issue_id}"
+                    )
 
     def async_handle_push_update(self, message: dict[str, Any]) -> None:
         """Merge a WebSocket push notification into the current device data.
@@ -151,4 +210,5 @@ class ConnectLifeCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             content,
             status,
         )
+        self._check_faults(new_data)
         self.async_set_updated_data(new_data)

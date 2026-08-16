@@ -3,6 +3,14 @@
 All notable changes to this integration are documented here. Versions match
 `custom_components/claudio_hisense/manifest.json`.
 
+## 2.3.0
+
+- Device fault flags (Upper/Lower Machine Fault, Indoor/Outdoor Coil/Temp
+  Sensor Fault, Water Tank Full, Push Fault) now raise a Home Assistant
+  repair issue (Settings → System → Repairs) and a persistent notification
+  when they become active, and automatically clear both once ConnectLife
+  reports the fault is no longer active.
+
 ## 2.2.0
 
 - Added two general options: **Enable periodic cloud polling** (disables

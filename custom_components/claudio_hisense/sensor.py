@@ -28,6 +28,7 @@ from .const import (
     CONF_MATTER_TEMPERATURE_SENSOR_ENTITY,
     CONF_TEMPERATURE_SENSORS,
     DOMAIN,
+    FAULT_FIELDS,
     TEMP_CODE_FAHRENHEIT,
 )
 from .coordinator import ConnectLifeCoordinator
@@ -275,14 +276,9 @@ class _FieldDef:
 
 
 _STATUS_FIELDS: list[_FieldDef] = [
-    # Error / fault flags
-    _FieldDef("f_e_upmachine", "Upper Machine Fault"),
-    _FieldDef("f_e_dwmachine", "Lower Machine Fault"),
-    _FieldDef("f_e_intemp", "Indoor Temp Sensor Fault"),
-    _FieldDef("f_e_incoiltemp", "Indoor Coil Temp Sensor Fault"),
-    _FieldDef("f_e_outcoiltemp", "Outdoor Coil Temp Sensor Fault"),
-    _FieldDef("f_e_waterfull", "Water Tank Full"),
-    _FieldDef("f_e_push", "Push Fault"),
+    # Error / fault flags — also raise a repair issue + notification when
+    # active, see FAULT_FIELDS / coordinator.py's _check_faults.
+    *(_FieldDef(key, name) for key, name in FAULT_FIELDS.items()),
     # AC operating state
     _FieldDef("t_power", "Power"),
     _FieldDef("t_work_mode", "Work Mode"),
