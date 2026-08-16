@@ -363,9 +363,10 @@ class ConnectLifeApi:
         if not isinstance(response, dict):
             raise ConnectLifeApiError(f"Unexpected response format: {response}")
         if response.get("resultCode") not in (0, None):
-            raise ConnectLifeApiError(
-                f"API error: {response.get('msg', 'Unknown error')}"
+            message = (
+                response.get("errorDesc") or response.get("msg") or "Unknown error"
             )
+            raise ConnectLifeApiError(f"API error: {message}")
         return response
 
     # ------------------------------------------------------------------

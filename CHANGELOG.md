@@ -3,6 +3,19 @@
 All notable changes to this integration are documented here. Versions match
 `custom_components/claudio_hisense/manifest.json`.
 
+## 2.4.0
+
+- Added a test suite (`tests/`, `pytest-homeassistant-custom-component`)
+  covering the API client's HMAC signing and response parsing, the
+  coordinator's WebSocket push-merge and fault-detection logic, the
+  climate platform's safe-update error handling, and an options-flow
+  regression test for the OAuth-token-leaking-into-options bug fixed in
+  2.2.0. Run with `uv run pytest tests`.
+- Fixed `_api_request` reading a nonexistent `msg` field for error
+  messages — ConnectLife's error responses use `errorDesc` (e.g. the
+  earlier "Device offline" case surfaced as the unhelpful "API error:
+  Unknown error"; now shows the real reason).
+
 ## 2.3.1
 
 - Fixed a crash (`ConnectLifeApiError: API error: Unknown error`, e.g. when
