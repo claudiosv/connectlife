@@ -135,5 +135,12 @@ class ConnectLifeCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         device["statusList"] = status
         new_data = dict(self.data)
         new_data[puid] = device
-        _LOGGER.debug("[%s] ConnectLife state updated via WebSocket push", puid)
+        _LOGGER.debug(
+            "[%s] ConnectLife state updated via WebSocket push: msg_type=%s "
+            "content=%s resulting_status=%s",
+            puid,
+            msg_type,
+            content,
+            status,
+        )
         self.async_set_updated_data(new_data)

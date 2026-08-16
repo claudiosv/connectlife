@@ -1,7 +1,7 @@
 {
     "domain": "claudio_hisense",
     "name": "Claudio Hisense",
-    "version": "2.1.0",
+    "version": "2.1.1",
     "config_flow": true,
     "documentation": "https://github.com/claudiosv/connectlife",
     "issue_tracker": "https://github.com/claudiosv/connectlife/issues",

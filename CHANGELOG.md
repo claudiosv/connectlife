@@ -3,6 +3,12 @@
 All notable changes to this integration are documented here. Versions match
 `custom_components/claudio_hisense/manifest.json`.
 
+## 2.1.1
+
+- Log the decoded WebSocket push content and resulting merged status
+  alongside the existing "ConnectLife state updated via WebSocket push"
+  debug message, instead of just the puid.
+
 ## 2.1.0
 
 - Made external temperature/humidity sensor, Matter climate/temperature
