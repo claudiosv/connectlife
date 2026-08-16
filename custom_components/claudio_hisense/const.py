@@ -24,6 +24,10 @@ CONF_COMMAND_REFRESH_DELAY = "command_refresh_delay"
 CONF_DEBOUNCE_DELAY = "debounce_delay"
 CONF_DEBUG_LOGGING = "debug_logging"
 CONF_OAUTH_REDIRECT_URI = "oauth_redirect_uri"
+# Per-device overrides, keyed by puid: {puid: {CONF_CURRENT_TEMP_ENTITY: ..., ...}}.
+# Holds the entity-linking options below — a single global sensor/Matter
+# entity doesn't make sense once there's more than one AC.
+CONF_DEVICES = "devices"
 
 TEMP_UNIT_CELSIUS = "celsius"
 TEMP_UNIT_FAHRENHEIT = "fahrenheit"

@@ -26,6 +26,7 @@ from .const import (
     CONF_CURRENT_TEMP_ENTITY,
     CONF_DEBOUNCE_DELAY,
     CONF_DEBUG_LOGGING,
+    CONF_DEVICES,
     CONF_DEVICES_CONFIG,
     CONF_DRY_IDLE_MODE,
     CONF_EXTERNAL_TEMP_ENABLED,
@@ -116,8 +117,13 @@ def _normalize_log_level(value: Any) -> str:
     return value
 
 
-def _options_schema(current: dict[str, Any]) -> vol.Schema:
-    """Build the options schema pre-filled with current values."""
+# Options that vary per AC device rather than applying globally — a single
+# global sensor/Matter entity doesn't make sense once there's more than one
+# AC. Stored under CONF_DEVICES, keyed by puid; see _device_schema below.
+
+
+def _general_schema(current: dict[str, Any]) -> vol.Schema:
+    """Build the schema for options that apply to every device."""
     return vol.Schema({
         vol.Optional(CONF_BEEPING, default=current.get(CONF_BEEPING, False)): bool,
         vol.Optional(
@@ -128,80 +134,6 @@ def _options_schema(current: dict[str, Any]) -> vol.Schema:
             CONF_TEMPERATURE_SENSORS,
             default=current.get(CONF_TEMPERATURE_SENSORS, False),
         ): bool,
-        vol.Optional(
-            CONF_CURRENT_TEMP_ENTITY,
-            description={"suggested_value": current.get(CONF_CURRENT_TEMP_ENTITY)},
-        ): EntitySelector(
-            EntitySelectorConfig(
-                domain="sensor", device_class="temperature", multiple=False
-            )
-        ),
-        vol.Optional(
-            CONF_EXTERNAL_TEMP_ENABLED,
-            default=current.get(CONF_EXTERNAL_TEMP_ENABLED, True),
-        ): bool,
-        vol.Optional(
-            CONF_THERMOSTAT_FORCING_ENABLED,
-            default=current.get(CONF_THERMOSTAT_FORCING_ENABLED, False),
-        ): bool,
-        vol.Optional(
-            CONF_CURRENT_HUMIDITY_ENTITY,
-            description={"suggested_value": current.get(CONF_CURRENT_HUMIDITY_ENTITY)},
-        ): EntitySelector(
-            EntitySelectorConfig(
-                domain="sensor", device_class="humidity", multiple=False
-            )
-        ),
-        vol.Optional(
-            CONF_TARGET_HUMIDITY,
-            description={"suggested_value": current.get(CONF_TARGET_HUMIDITY)},
-        ): NumberSelector(
-            NumberSelectorConfig(min=30, max=80, step=1, mode=NumberSelectorMode.BOX)
-        ),
-        vol.Optional(
-            CONF_DRY_IDLE_MODE,
-            default=current.get(CONF_DRY_IDLE_MODE, DRY_IDLE_MODE_FAN_ONLY),
-        ): vol.In([DRY_IDLE_MODE_FAN_ONLY, DRY_IDLE_MODE_OFF]),
-        vol.Optional(
-            CONF_HUMIDITY_HYSTERESIS,
-            default=current.get(CONF_HUMIDITY_HYSTERESIS, DEFAULT_HUMIDITY_HYSTERESIS),
-        ): NumberSelector(
-            NumberSelectorConfig(
-                min=0,
-                max=20,
-                step=1,
-                mode=NumberSelectorMode.BOX,
-                unit_of_measurement="%",
-            )
-        ),
-        vol.Optional(
-            CONF_MATTER_CLIMATE_ENTITY,
-            description={"suggested_value": current.get(CONF_MATTER_CLIMATE_ENTITY)},
-        ): EntitySelector(
-            EntitySelectorConfig(domain="climate", integration="matter", multiple=False)
-        ),
-        vol.Optional(
-            CONF_MATTER_TEMPERATURE_SENSOR_ENTITY,
-            description={
-                "suggested_value": current.get(CONF_MATTER_TEMPERATURE_SENSOR_ENTITY)
-            },
-        ): EntitySelector(
-            EntitySelectorConfig(
-                domain="sensor", device_class="temperature", multiple=False
-            )
-        ),
-        vol.Optional(
-            CONF_MATTER_SYNC_TIMEOUT,
-            default=current.get(CONF_MATTER_SYNC_TIMEOUT, MATTER_SYNC_TIMEOUT_SECONDS),
-        ): NumberSelector(
-            NumberSelectorConfig(
-                min=5,
-                max=300,
-                step=5,
-                mode=NumberSelectorMode.BOX,
-                unit_of_measurement="s",
-            )
-        ),
         vol.Optional(
             CONF_SENSOR_CONTROL_MIN_INTERVAL,
             default=current.get(
@@ -277,6 +209,86 @@ def _options_schema(current: dict[str, Any]) -> vol.Schema:
     })
 
 
+def _device_schema(current: dict[str, Any]) -> vol.Schema:
+    """Build the schema for one device's overrides (current = that device's dict)."""
+    return vol.Schema({
+        vol.Optional(
+            CONF_CURRENT_TEMP_ENTITY,
+            description={"suggested_value": current.get(CONF_CURRENT_TEMP_ENTITY)},
+        ): EntitySelector(
+            EntitySelectorConfig(
+                domain="sensor", device_class="temperature", multiple=False
+            )
+        ),
+        vol.Optional(
+            CONF_EXTERNAL_TEMP_ENABLED,
+            default=current.get(CONF_EXTERNAL_TEMP_ENABLED, True),
+        ): bool,
+        vol.Optional(
+            CONF_THERMOSTAT_FORCING_ENABLED,
+            default=current.get(CONF_THERMOSTAT_FORCING_ENABLED, False),
+        ): bool,
+        vol.Optional(
+            CONF_CURRENT_HUMIDITY_ENTITY,
+            description={"suggested_value": current.get(CONF_CURRENT_HUMIDITY_ENTITY)},
+        ): EntitySelector(
+            EntitySelectorConfig(
+                domain="sensor", device_class="humidity", multiple=False
+            )
+        ),
+        vol.Optional(
+            CONF_TARGET_HUMIDITY,
+            description={"suggested_value": current.get(CONF_TARGET_HUMIDITY)},
+        ): NumberSelector(
+            NumberSelectorConfig(min=30, max=80, step=1, mode=NumberSelectorMode.BOX)
+        ),
+        vol.Optional(
+            CONF_DRY_IDLE_MODE,
+            default=current.get(CONF_DRY_IDLE_MODE, DRY_IDLE_MODE_FAN_ONLY),
+        ): vol.In([DRY_IDLE_MODE_FAN_ONLY, DRY_IDLE_MODE_OFF]),
+        vol.Optional(
+            CONF_HUMIDITY_HYSTERESIS,
+            default=current.get(CONF_HUMIDITY_HYSTERESIS, DEFAULT_HUMIDITY_HYSTERESIS),
+        ): NumberSelector(
+            NumberSelectorConfig(
+                min=0,
+                max=20,
+                step=1,
+                mode=NumberSelectorMode.BOX,
+                unit_of_measurement="%",
+            )
+        ),
+        vol.Optional(
+            CONF_MATTER_CLIMATE_ENTITY,
+            description={"suggested_value": current.get(CONF_MATTER_CLIMATE_ENTITY)},
+        ): EntitySelector(
+            EntitySelectorConfig(domain="climate", integration="matter", multiple=False)
+        ),
+        vol.Optional(
+            CONF_MATTER_TEMPERATURE_SENSOR_ENTITY,
+            description={
+                "suggested_value": current.get(CONF_MATTER_TEMPERATURE_SENSOR_ENTITY)
+            },
+        ): EntitySelector(
+            EntitySelectorConfig(
+                domain="sensor", device_class="temperature", multiple=False
+            )
+        ),
+        vol.Optional(
+            CONF_MATTER_SYNC_TIMEOUT,
+            default=current.get(CONF_MATTER_SYNC_TIMEOUT, MATTER_SYNC_TIMEOUT_SECONDS),
+        ): NumberSelector(
+            NumberSelectorConfig(
+                min=5,
+                max=300,
+                step=5,
+                mode=NumberSelectorMode.BOX,
+                unit_of_measurement="s",
+            )
+        ),
+    })
+
+
 class ConnectLifeConfigFlow(
     config_entry_oauth2_flow.AbstractOAuth2FlowHandler, domain=DOMAIN
 ):
@@ -347,18 +359,57 @@ class ConnectLifeConfigFlow(
         )
 
 
+_GENERAL_TARGET = "_general"
+
+
 class ConnectLifeOptionsFlow(OptionsFlow):
-    """Handle ConnectLife options (reconfigure after setup)."""
+    """Handle ConnectLife options (reconfigure after setup).
+
+    A picker step routes to either the general (global) settings form or a
+    per-device form for one AC's entity-linking overrides (external temp/
+    humidity sensor, Matter entities, dry-idle/hysteresis, etc.) — those
+    don't make sense as a single global value once there's more than one
+    ConnectLife AC on the account.
+    """
 
     def __init__(self, config_entry: ConfigEntry) -> None:
         self._config_entry = config_entry
+        self._editing_puid: str | None = None
+
+    def _device_names(self) -> dict[str, str]:
+        """Return {puid: display_name} for devices known to the coordinator."""
+        coordinator = self.hass.data.get(DOMAIN, {}).get(self._config_entry.entry_id)
+        if coordinator is None or coordinator.data is None:
+            return {}
+        return {
+            puid: device.get("deviceNickName", puid)
+            for puid, device in coordinator.data.items()
+        }
 
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        errors: dict[str, str] = {}
+        devices = self._device_names()
 
-        # Merge entry data + previously saved options so current values are shown
+        if user_input is not None:
+            target = user_input["target"]
+            if target == _GENERAL_TARGET:
+                return await self.async_step_general()
+            self._editing_puid = target
+            return await self.async_step_device()
+
+        choices = {_GENERAL_TARGET: "General settings", **devices}
+        return self.async_show_form(
+            step_id="init",
+            data_schema=vol.Schema({
+                vol.Required("target", default=_GENERAL_TARGET): vol.In(choices)
+            }),
+        )
+
+    async def async_step_general(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        errors: dict[str, str] = {}
         current = {**self._config_entry.data, **self._config_entry.options}
 
         if user_input is not None:
@@ -368,72 +419,98 @@ class ConnectLifeOptionsFlow(OptionsFlow):
             except json.JSONDecodeError:
                 errors[CONF_DEVICES_CONFIG] = "invalid_json"
             else:
-                if not errors:
-                    return self.async_create_entry(
-                        title="",
-                        data={
-                            CONF_BEEPING: user_input[CONF_BEEPING],
-                            CONF_TEMPERATURE_UNIT: user_input[CONF_TEMPERATURE_UNIT],
-                            CONF_TEMPERATURE_SENSORS: user_input[
-                                CONF_TEMPERATURE_SENSORS
-                            ],
-                            CONF_CURRENT_TEMP_ENTITY: user_input.get(
-                                CONF_CURRENT_TEMP_ENTITY
-                            ),
-                            CONF_EXTERNAL_TEMP_ENABLED: user_input.get(
-                                CONF_EXTERNAL_TEMP_ENABLED, True
-                            ),
-                            CONF_THERMOSTAT_FORCING_ENABLED: user_input.get(
-                                CONF_THERMOSTAT_FORCING_ENABLED, False
-                            ),
-                            CONF_CURRENT_HUMIDITY_ENTITY: user_input.get(
-                                CONF_CURRENT_HUMIDITY_ENTITY
-                            ),
-                            CONF_TARGET_HUMIDITY: user_input.get(CONF_TARGET_HUMIDITY),
-                            CONF_DRY_IDLE_MODE: user_input.get(
-                                CONF_DRY_IDLE_MODE, DRY_IDLE_MODE_FAN_ONLY
-                            ),
-                            CONF_HUMIDITY_HYSTERESIS: user_input.get(
-                                CONF_HUMIDITY_HYSTERESIS, DEFAULT_HUMIDITY_HYSTERESIS
-                            ),
-                            CONF_MATTER_CLIMATE_ENTITY: user_input.get(
-                                CONF_MATTER_CLIMATE_ENTITY
-                            ),
-                            CONF_MATTER_TEMPERATURE_SENSOR_ENTITY: user_input.get(
-                                CONF_MATTER_TEMPERATURE_SENSOR_ENTITY
-                            ),
-                            CONF_MATTER_SYNC_TIMEOUT: user_input.get(
-                                CONF_MATTER_SYNC_TIMEOUT, MATTER_SYNC_TIMEOUT_SECONDS
-                            ),
-                            CONF_SENSOR_CONTROL_MIN_INTERVAL: user_input.get(
-                                CONF_SENSOR_CONTROL_MIN_INTERVAL,
-                                SENSOR_CONTROL_MIN_INTERVAL_SECONDS,
-                            ),
-                            CONF_TEMPERATURE_PRECISION: user_input.get(
-                                CONF_TEMPERATURE_PRECISION
-                            ),
-                            CONF_HUMIDITY_PRECISION: user_input.get(
-                                CONF_HUMIDITY_PRECISION
-                            ),
-                            CONF_POLL_INTERVAL: user_input.get(
-                                CONF_POLL_INTERVAL, UPDATE_INTERVAL_SECONDS
-                            ),
-                            CONF_COMMAND_REFRESH_DELAY: user_input.get(
-                                CONF_COMMAND_REFRESH_DELAY,
-                                COMMAND_REFRESH_DELAY_SECONDS,
-                            ),
-                            CONF_DEBOUNCE_DELAY: user_input.get(
-                                CONF_DEBOUNCE_DELAY, DEBOUNCE_DELAY_SECONDS
-                            ),
-                            CONF_DEVICES_CONFIG: user_input[CONF_DEVICES_CONFIG],
-                            CONF_DEBUG_LOGGING: user_input.get(
-                                CONF_DEBUG_LOGGING, LOG_LEVEL_DEFAULT
-                            ),
-                        },
-                    )
+                return self.async_create_entry(
+                    title="",
+                    data={
+                        # Base on existing *options* only — not entry.data,
+                        # which also holds the OAuth token; spreading
+                        # `current` (data+options merged) would copy a
+                        # point-in-time token into options, where it would
+                        # permanently shadow future refreshes written to
+                        # entry.data (entry_config() prefers options).
+                        **self._config_entry.options,
+                        CONF_BEEPING: user_input[CONF_BEEPING],
+                        CONF_TEMPERATURE_UNIT: user_input[CONF_TEMPERATURE_UNIT],
+                        CONF_TEMPERATURE_SENSORS: user_input[CONF_TEMPERATURE_SENSORS],
+                        CONF_SENSOR_CONTROL_MIN_INTERVAL: user_input.get(
+                            CONF_SENSOR_CONTROL_MIN_INTERVAL,
+                            SENSOR_CONTROL_MIN_INTERVAL_SECONDS,
+                        ),
+                        CONF_TEMPERATURE_PRECISION: user_input.get(
+                            CONF_TEMPERATURE_PRECISION
+                        ),
+                        CONF_HUMIDITY_PRECISION: user_input.get(
+                            CONF_HUMIDITY_PRECISION
+                        ),
+                        CONF_POLL_INTERVAL: user_input.get(
+                            CONF_POLL_INTERVAL, UPDATE_INTERVAL_SECONDS
+                        ),
+                        CONF_COMMAND_REFRESH_DELAY: user_input.get(
+                            CONF_COMMAND_REFRESH_DELAY, COMMAND_REFRESH_DELAY_SECONDS
+                        ),
+                        CONF_DEBOUNCE_DELAY: user_input.get(
+                            CONF_DEBOUNCE_DELAY, DEBOUNCE_DELAY_SECONDS
+                        ),
+                        CONF_DEVICES_CONFIG: user_input[CONF_DEVICES_CONFIG],
+                        CONF_DEBUG_LOGGING: user_input.get(
+                            CONF_DEBUG_LOGGING, LOG_LEVEL_DEFAULT
+                        ),
+                    },
+                )
 
         return self.async_show_form(
-            step_id="init",
-            data_schema=_options_schema(current),
+            step_id="general",
+            data_schema=_general_schema(current),
             errors=errors,
+        )
+
+    async def async_step_device(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        puid = self._editing_puid
+        assert puid is not None
+        current = {**self._config_entry.data, **self._config_entry.options}
+        all_devices = dict(current.get(CONF_DEVICES, {}))
+        device_current = dict(all_devices.get(puid, {}))
+
+        if user_input is not None:
+            all_devices[puid] = {
+                CONF_CURRENT_TEMP_ENTITY: user_input.get(CONF_CURRENT_TEMP_ENTITY),
+                CONF_EXTERNAL_TEMP_ENABLED: user_input.get(
+                    CONF_EXTERNAL_TEMP_ENABLED, True
+                ),
+                CONF_THERMOSTAT_FORCING_ENABLED: user_input.get(
+                    CONF_THERMOSTAT_FORCING_ENABLED, False
+                ),
+                CONF_CURRENT_HUMIDITY_ENTITY: user_input.get(
+                    CONF_CURRENT_HUMIDITY_ENTITY
+                ),
+                CONF_TARGET_HUMIDITY: user_input.get(CONF_TARGET_HUMIDITY),
+                CONF_DRY_IDLE_MODE: user_input.get(
+                    CONF_DRY_IDLE_MODE, DRY_IDLE_MODE_FAN_ONLY
+                ),
+                CONF_HUMIDITY_HYSTERESIS: user_input.get(
+                    CONF_HUMIDITY_HYSTERESIS, DEFAULT_HUMIDITY_HYSTERESIS
+                ),
+                CONF_MATTER_CLIMATE_ENTITY: user_input.get(CONF_MATTER_CLIMATE_ENTITY),
+                CONF_MATTER_TEMPERATURE_SENSOR_ENTITY: user_input.get(
+                    CONF_MATTER_TEMPERATURE_SENSOR_ENTITY
+                ),
+                CONF_MATTER_SYNC_TIMEOUT: user_input.get(
+                    CONF_MATTER_SYNC_TIMEOUT, MATTER_SYNC_TIMEOUT_SECONDS
+                ),
+            }
+            return self.async_create_entry(
+                title="",
+                # Base on existing *options* only — see the same note in
+                # async_step_general about not spreading entry.data (token).
+                data={**self._config_entry.options, CONF_DEVICES: all_devices},
+            )
+
+        return self.async_show_form(
+            step_id="device",
+            data_schema=_device_schema(device_current),
+            description_placeholders={
+                "device_name": self._device_names().get(puid, puid)
+            },
         )

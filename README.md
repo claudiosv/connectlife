@@ -40,7 +40,11 @@ A native Python Home Assistant custom integration for ConnectLife AC devices.
 Setup happens via a browser-based OAuth2 login (click through to ConnectLife's
 own login page from the Add Integration flow) — no username/password is
 entered into Home Assistant directly. Everything else is configured
-afterwards from the integration's **Configure** button:
+afterwards from the integration's **Configure** button, which opens a picker
+between **General settings** (below) and a **per-device** page for each AC
+— external temperature/humidity sensor, Matter linkage, dry-mode target
+humidity, etc. are configured per AC, not globally, since those don't make
+sense shared across multiple units:
 
 | Field | Required | Default | Description |
 |---|---|---|---|

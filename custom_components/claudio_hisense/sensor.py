@@ -23,6 +23,7 @@ from homeassistant.util.unit_conversion import TemperatureConverter
 from . import entry_config
 from .const import (
     CONF_CURRENT_TEMP_ENTITY,
+    CONF_DEVICES,
     CONF_MATTER_CLIMATE_ENTITY,
     CONF_MATTER_TEMPERATURE_SENSOR_ENTITY,
     CONF_TEMPERATURE_SENSORS,
@@ -43,14 +44,21 @@ async def async_setup_entry(
     coordinator: ConnectLifeCoordinator = hass.data[DOMAIN][entry.entry_id]
     cfg = entry_config(entry)
     temp_sensors_enabled = cfg.get(CONF_TEMPERATURE_SENSORS, False)
-    matter_climate_entity = cfg.get(CONF_MATTER_CLIMATE_ENTITY)
-    matter_temperature_sensor_entity = cfg.get(CONF_MATTER_TEMPERATURE_SENSOR_ENTITY)
-    current_temp_entity = cfg.get(CONF_CURRENT_TEMP_ENTITY)
+    # Entity-linking overrides are per-device — see config_flow.py's device
+    # options step / climate.py's async_setup_entry for the same pattern.
+    all_devices_cfg: dict[str, dict] = cfg.get(CONF_DEVICES, {})
 
     known_keys = {fd.key for fd in _STATUS_FIELDS}
 
     entities: list[SensorEntity] = []
     for puid, device in coordinator.data.items():
+        dev_cfg = all_devices_cfg.get(puid, {})
+        matter_climate_entity = dev_cfg.get(CONF_MATTER_CLIMATE_ENTITY)
+        matter_temperature_sensor_entity = dev_cfg.get(
+            CONF_MATTER_TEMPERATURE_SENSOR_ENTITY
+        )
+        current_temp_entity = dev_cfg.get(CONF_CURRENT_TEMP_ENTITY)
+
         # if "daily_energy_kwh" in device.get("statusList", {}):
         #     entities.append(ConnectLifeEnergySensor(coordinator, puid, device))
 
@@ -107,12 +115,9 @@ async def async_setup_entry(
             )
 
     _LOGGER.debug(
-        "Setting up %d sensor entities for %d device(s) (matter_climate_entity=%r, "
-        "matter_temperature_sensor_entity=%r)",
+        "Setting up %d sensor entities for %d device(s)",
         len(entities),
         len(coordinator.data),
-        matter_climate_entity,
-        matter_temperature_sensor_entity,
     )
     async_add_entities(entities)
 

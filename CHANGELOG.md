@@ -3,6 +3,16 @@
 All notable changes to this integration are documented here. Versions match
 `custom_components/claudio_hisense/manifest.json`.
 
+## 2.1.0
+
+- Made external temperature/humidity sensor, Matter climate/temperature
+  entity, target humidity, dry-idle mode, humidity hysteresis, thermostat
+  forcing, and Matter sync timeout **per-device** instead of global — a
+  single shared sensor/Matter entity didn't make sense once you have more
+  than one ConnectLife AC. Configure them from the integration's
+  **Configure** button, which now opens a picker between general settings
+  and each AC.
+
 ## 2.0.2
 
 - Repo tooling only: every future push now requires a version bump + this

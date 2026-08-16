@@ -41,6 +41,7 @@ from .const import (
     CONF_CURRENT_HUMIDITY_ENTITY,
     CONF_CURRENT_TEMP_ENTITY,
     CONF_DEBOUNCE_DELAY,
+    CONF_DEVICES,
     CONF_DEVICES_CONFIG,
     CONF_DRY_IDLE_MODE,
     CONF_EXTERNAL_TEMP_ENABLED,
@@ -144,19 +145,6 @@ async def async_setup_entry(
         devices_config = {}
 
     beeping = cfg.get(CONF_BEEPING, False)
-    current_temp_entity = cfg.get(CONF_CURRENT_TEMP_ENTITY)
-    external_temp_enabled = cfg.get(CONF_EXTERNAL_TEMP_ENABLED, True)
-    current_humidity_entity = cfg.get(CONF_CURRENT_HUMIDITY_ENTITY)
-    target_humidity = cfg.get(CONF_TARGET_HUMIDITY)
-    dry_idle_mode = cfg.get(CONF_DRY_IDLE_MODE, DRY_IDLE_MODE_FAN_ONLY)
-    humidity_hysteresis = float(
-        cfg.get(CONF_HUMIDITY_HYSTERESIS, DEFAULT_HUMIDITY_HYSTERESIS)
-    )
-    thermostat_forcing_enabled = cfg.get(CONF_THERMOSTAT_FORCING_ENABLED, False)
-    matter_climate_entity = cfg.get(CONF_MATTER_CLIMATE_ENTITY)
-    matter_sync_timeout = float(
-        cfg.get(CONF_MATTER_SYNC_TIMEOUT, MATTER_SYNC_TIMEOUT_SECONDS)
-    )
     sensor_control_min_interval = float(
         cfg.get(
             CONF_SENSOR_CONTROL_MIN_INTERVAL, SENSOR_CONTROL_MIN_INTERVAL_SECONDS
@@ -168,31 +156,40 @@ async def async_setup_entry(
         cfg.get(CONF_COMMAND_REFRESH_DELAY, COMMAND_REFRESH_DELAY_SECONDS)
     )
     debounce_delay = float(cfg.get(CONF_DEBOUNCE_DELAY, DEBOUNCE_DELAY_SECONDS))
+    # Entity-linking overrides (external temp/humidity sensor, Matter
+    # entities, dry-idle/hysteresis, ...) are per-device — a single global
+    # value doesn't make sense once there's more than one AC. See
+    # config_flow.py's device options step.
+    all_devices_cfg: dict[str, dict] = cfg.get(CONF_DEVICES, {})
 
-    entities = [
-        ConnectLifeClimate(
-            coordinator,
-            puid,
-            device,
-            devices_config,
-            beeping,
-            current_temp_entity,
-            external_temp_enabled,
-            current_humidity_entity,
-            target_humidity,
-            command_refresh_delay,
-            debounce_delay,
-            matter_climate_entity,
-            temperature_precision,
-            humidity_precision,
-            matter_sync_timeout,
-            dry_idle_mode,
-            humidity_hysteresis,
-            thermostat_forcing_enabled,
-            sensor_control_min_interval,
+    entities = []
+    for puid, device in coordinator.data.items():
+        dev_cfg = all_devices_cfg.get(puid, {})
+        entities.append(
+            ConnectLifeClimate(
+                coordinator,
+                puid,
+                device,
+                devices_config,
+                beeping,
+                dev_cfg.get(CONF_CURRENT_TEMP_ENTITY),
+                dev_cfg.get(CONF_EXTERNAL_TEMP_ENABLED, True),
+                dev_cfg.get(CONF_CURRENT_HUMIDITY_ENTITY),
+                dev_cfg.get(CONF_TARGET_HUMIDITY),
+                command_refresh_delay,
+                debounce_delay,
+                dev_cfg.get(CONF_MATTER_CLIMATE_ENTITY),
+                temperature_precision,
+                humidity_precision,
+                float(dev_cfg.get(CONF_MATTER_SYNC_TIMEOUT, MATTER_SYNC_TIMEOUT_SECONDS)),
+                dev_cfg.get(CONF_DRY_IDLE_MODE, DRY_IDLE_MODE_FAN_ONLY),
+                float(
+                    dev_cfg.get(CONF_HUMIDITY_HYSTERESIS, DEFAULT_HUMIDITY_HYSTERESIS)
+                ),
+                dev_cfg.get(CONF_THERMOSTAT_FORCING_ENABLED, False),
+                sensor_control_min_interval,
+            )
         )
-        for puid, device in coordinator.data.items()
-    ]
     async_add_entities(entities)
 
 
