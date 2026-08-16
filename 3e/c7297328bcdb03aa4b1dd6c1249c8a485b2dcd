@@ -1,0 +1,14 @@
+pyproject.toml
+  h_aceaeb4e74d6dc 12,18-23
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "3ec7297328bcdb03aa4b1dd6c1249c8a485b2dcd",
+  "prompts": {},
+  "humans": {
+    "h_aceaeb4e74d6dc": {
+      "author": "Claudio Spiess <claudiosv@users.noreply.github.com>"
+    }
+  }
+}
