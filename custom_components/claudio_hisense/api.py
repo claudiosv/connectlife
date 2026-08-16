@@ -380,14 +380,13 @@ class ConnectLifeApi:
             "get_device_status_list raw response: %s", json.dumps(body, indent=4)
         )
 
-        response = body.get("response", {})
-        if "deviceList" not in response:
+        if "deviceList" not in body:
             _LOGGER.warning(
-                "ConnectLife API: missing deviceList in response: %s", response
+                "ConnectLife API: missing deviceList in response: %s", body
             )
             return []
 
-        devices: list[dict[str, Any]] = response["deviceList"]
+        devices: list[dict[str, Any]] = body["deviceList"] or []
         _LOGGER.info("Fetched status for %d device(s) from ConnectLife", len(devices))
 
         for device in devices:
@@ -461,7 +460,7 @@ class ConnectLifeApi:
                 "featureCode": "117",
             },
         )
-        return body.get("response", {})
+        return body
 
     async def update_device(
         self, device_id: str, properties: dict[str, Any]
@@ -489,7 +488,7 @@ class ConnectLifeApi:
             "/device/pu/property/set",
             data={"puid": device_id, "properties": properties},
         )
-        result = body.get("response", {})
+        result = body.get("kvMap", body)
         _LOGGER.debug("Update device result: %s", result)
         return result
 
