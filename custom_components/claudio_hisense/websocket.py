@@ -112,108 +112,114 @@ class ConnectLifeWebSocket:
             _LOGGER.error("Failed to get notification info: %s", err)
             return None
 
-    async def _connect_ws(self) -> None:
-        if not self._notification_info or not self._phone_code:
-            _LOGGER.error("Missing notification info or phone code")
-            return
+    async def _connect_ws_loop(self) -> None:
+        """Registration + connect + listen, retrying indefinitely until closing.
 
-        channel = (
-            self._notification_info.push_channels[0].push_channel
-            if self._notification_info.push_channels
-            else ""
-        )
-        if not channel:
-            _LOGGER.error("No push channel available")
-            return
+        Runs entirely as a background task (see async_connect) so none of
+        this — including the phone-code registration and notification-info
+        fetch, which used to be awaited directly from async_connect — can
+        ever block Home Assistant's setup/bootstrap on a slow or hanging
+        ConnectLife network call.
+        """
+        while not self._closing:
+            try:
+                if not self._phone_code:
+                    self._phone_code = str(uuid.uuid4())
 
-        try:
-            access_token = await self.api_client.oauth_session.async_get_access_token()
-            ws_url = (
-                f"wss://{self._notification_info.push_server_ip}:"
-                f"{self._notification_info.push_server_ssl_port}/ws/{channel}"
-                f"?phoneCode={self._phone_code}&token={access_token}"
-            )
+                if not self._notification_info:
+                    if await self._register_phone_code(self._phone_code):
+                        self._notification_info = await self._get_notification_info(
+                            self._phone_code
+                        )
+                    if not self._notification_info:
+                        _LOGGER.debug(
+                            "Could not get ConnectLife notification info, retrying in 30s"
+                        )
+                        await asyncio.sleep(30)
+                        continue
 
-            self._ws = await self.session.ws_connect(
-                ws_url, heartbeat=self._ping_interval, ssl=True
-            )
-            _LOGGER.info("ConnectLife WebSocket connection established")
-            self._fail_count = 0
-            await self._listen()
+                self._ping_interval = self._notification_info.hb_interval
+                self._max_fails = self._notification_info.hb_fail_times
 
-        except aiohttp.ClientError as err:
-            _LOGGER.error("WebSocket connection failed: %s", err)
-            self._fail_count += 1
-            if self._fail_count >= self._max_fails:
-                _LOGGER.error("Max WebSocket connection failures reached")
-                return
+                channel = (
+                    self._notification_info.push_channels[0].push_channel
+                    if self._notification_info.push_channels
+                    else ""
+                )
+                if not channel:
+                    _LOGGER.error("No ConnectLife push channel available; retrying in 30s")
+                    self._notification_info = None
+                    await asyncio.sleep(30)
+                    continue
 
-            retry_delay = min(30, 5 * (2 ** (self._fail_count - 1)))
-            await asyncio.sleep(retry_delay)
+                access_token = await self.api_client.oauth_session.async_get_access_token()
+                ws_url = (
+                    f"wss://{self._notification_info.push_server_ip}:"
+                    f"{self._notification_info.push_server_ssl_port}/ws/{channel}"
+                    f"?phoneCode={self._phone_code}&token={access_token}"
+                )
 
-            if not self._closing:
-                self._notification_info = await self._get_notification_info(self._phone_code)
-                if self._notification_info:
-                    await self._connect_ws()
+                async with asyncio.timeout(15):
+                    self._ws = await self.session.ws_connect(
+                        ws_url, heartbeat=self._ping_interval, ssl=True
+                    )
+                _LOGGER.info("ConnectLife WebSocket connection established")
+                self._fail_count = 0
+
+                await self._listen()
+
+            except asyncio.CancelledError:
+                raise
+            except Exception as err:
+                if self._closing:
+                    break
+                self._fail_count += 1
+                retry_delay = min(30, 5 * (2 ** (self._fail_count - 1)))
+                _LOGGER.debug(
+                    "ConnectLife WebSocket error (%s); retrying in %ss", err, retry_delay
+                )
+                # Registration/channel info may be stale — refresh it next loop.
+                self._notification_info = None
+                await asyncio.sleep(retry_delay)
+            finally:
+                self._ws = None
 
     async def _listen(self) -> None:
         if not self._ws:
             return
 
-        try:
-            async for msg in self._ws:
-                if msg.type == aiohttp.WSMsgType.TEXT:
-                    current_time = time.time()
-                    if current_time - self._last_message_time < 1:
-                        continue
-                    self._last_message_time = current_time
+        async for msg in self._ws:
+            if self._closing:
+                break
+            if msg.type == aiohttp.WSMsgType.TEXT:
+                current_time = time.time()
+                if current_time - self._last_message_time < 1:
+                    continue
+                self._last_message_time = current_time
 
-                    try:
-                        decoded_content = base64.b64decode(msg.data).decode("utf-8")
-                        data = json.loads(decoded_content)
-                        self.message_callback(data)
-                    except (ValueError, UnicodeDecodeError, json.JSONDecodeError) as err:
-                        _LOGGER.error("Failed to decode WebSocket message: %s", err)
-                elif msg.type == aiohttp.WSMsgType.ERROR:
-                    _LOGGER.error("WebSocket error: %s", self._ws.exception())
-                    break
-                elif msg.type == aiohttp.WSMsgType.CLOSED:
-                    break
-        except Exception as err:
-            _LOGGER.error("WebSocket listener error: %s", err)
-        finally:
-            if not self._closing and self._fail_count < self._max_fails:
-                self.hass.loop.create_task(self._delayed_reconnect())
-
-    async def _delayed_reconnect(self) -> None:
-        try:
-            await asyncio.sleep(5)
-            self._notification_info = await self._get_notification_info(self._phone_code)
-            if self._notification_info:
-                await self._connect_ws()
-        except Exception as err:
-            _LOGGER.error("Error during WebSocket reconnection: %s", err)
+                try:
+                    decoded_content = base64.b64decode(msg.data).decode("utf-8")
+                    data = json.loads(decoded_content)
+                    self.message_callback(data)
+                except (ValueError, UnicodeDecodeError, json.JSONDecodeError) as err:
+                    _LOGGER.error("Failed to decode WebSocket message: %s", err)
+            elif msg.type == aiohttp.WSMsgType.ERROR:
+                _LOGGER.error("WebSocket error: %s", self._ws.exception())
+                break
+            elif msg.type == aiohttp.WSMsgType.CLOSED:
+                break
 
     async def async_connect(self) -> None:
-        try:
-            self._phone_code = str(uuid.uuid4())
+        """Start the background WebSocket task.
 
-            if not await self._register_phone_code(self._phone_code):
-                _LOGGER.error("Failed to register phone code")
-                return
-
-            self._notification_info = await self._get_notification_info(self._phone_code)
-            if not self._notification_info:
-                _LOGGER.error("Failed to get notification info")
-                return
-
-            self._ping_interval = self._notification_info.hb_interval
-            self._max_fails = self._notification_info.hb_fail_times
-
-            self._closing = False
-            self._task = self.hass.async_create_task(self._connect_ws())
-        except Exception as err:
-            _LOGGER.error("Failed to connect to ConnectLife WebSocket: %s", err)
+        Returns immediately — registration, connection, and listening all
+        happen in the background task, so this never blocks Home
+        Assistant's setup/bootstrap.
+        """
+        self._closing = False
+        self._task = self.hass.async_create_background_task(
+            self._connect_ws_loop(), "connectlife_websocket"
+        )
 
     async def async_disconnect(self) -> None:
         self._closing = True
