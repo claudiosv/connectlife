@@ -1,0 +1,35 @@
+custom_components/claudio_hisense/oauth2.py
+  s_ff715d7046dd99::t_50954600087860 121-126
+  s_ff715d7046dd99::t_69bfe80ee50eb9 3-10,23-30
+  s_ff715d7046dd99::t_a29b1d9bd603f2 88-90,99,105-113
+custom_components/claudio_hisense/const.py
+  s_ff715d7046dd99::t_cd436fa3559850 76-81
+  s_ff715d7046dd99::t_32c5ed7e64bbe6 26
+custom_components/claudio_hisense/config_flow.py
+  s_ff715d7046dd99::t_05a33dc2a427f9 288-289
+  s_ff715d7046dd99::t_f0e514aa83980b 307-314,318-333,341
+  s_ff715d7046dd99::t_b17b623b5a9c80 37,47,60
+custom_components/claudio_hisense/__init__.py
+  s_ff715d7046dd99::t_3c38bef1564f96 121-127
+  s_ff715d7046dd99::t_95f167a3689e0f 15,17
+custom_components/claudio_hisense/strings.json
+  s_ff715d7046dd99::t_6e45a497f50d76 38-43
+custom_components/claudio_hisense/translations/en.json
+  s_ff715d7046dd99::t_b576eada01c544 2-27,29,31-42,44-56,58
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "260d5d502cf3bfac386b7ebd954a2798d9da6040",
+  "prompts": {},
+  "sessions": {
+    "s_ff715d7046dd99": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cdaeb340-7654-48e4-8fc9-6194612a3390",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "Claudio Spiess <claudiosv@users.noreply.github.com>"
+    }
+  }
+}
