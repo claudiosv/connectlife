@@ -64,8 +64,12 @@ ENERGY_REQUEST_DELAY = 1.0  # seconds between per-device energy calls
 
 AC_DEVICE_TYPE_CODES = {"009", "006", "008"}
 
-# ConnectLife API
-BASE_URL = "https://clife-eu-gateway.hijuconn.com"
+# ConnectLife API. This is the plugin's API_BASE_URL, used for every
+# HMAC-signed request (device list/control, websocket phone-code
+# registration, etc.) — NOT clife-eu-gateway.hijuconn.com, which was the
+# old RSA-signing scheme's host and doesn't recognize the new CLIENT_ID's
+# HMAC-signed requests (server rejects them with "Parameter Error : sign").
+BASE_URL = "https://juapi-3rd.hijuconn.com"
 
 # OAuth2 (browser-redirect login against the same backend Hisense's own
 # "Hisense AC" app registration uses — see Connectlife-LLC/HomeAssistantPlugin).
